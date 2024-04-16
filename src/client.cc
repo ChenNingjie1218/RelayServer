@@ -2,8 +2,13 @@
 
 #include <fcntl.h>
 #include <sys/epoll.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
+#include <cerrno>
+#include <cstring>
 #include <sstream>
+#include <utility>
 
 #include "message.h"
 
@@ -39,7 +44,7 @@ void Client::Run() {
   sockaddr_in server_address;
   server_address.sin_family = AF_INET;
   if (inet_pton(AF_INET, str_server_ip_, &server_address.sin_addr) != 1) {
-    std::cout << "inet_pton error" << std::endl;
+    std::cerr << "inet_pton error" << std::endl;
     close(client_socket);
     exit(-1);
   }
@@ -48,12 +53,12 @@ void Client::Run() {
   //连接到服务器
   if (connect(client_socket, (sockaddr*)&server_address,
               sizeof(server_address)) == -1) {
-    std::cout << "连接失败：" << strerror(errno) << std::endl;
+    std::cerr << "连接失败：" << strerror(errno) << std::endl;
     close(client_socket);
     exit(-1);
   }
 
-  std::cout << "连接服务器成功" << std::endl;
+  std::cerr << "连接服务器成功" << std::endl;
 
   ClientFunction(client_socket);
   //关闭socket
@@ -62,12 +67,13 @@ void Client::Run() {
 
 // MyClient
 
-MyClient::MyClient(int serverport, const char* str_server_ip, int id)
-    : Client(serverport, str_server_ip), id_(id) {}
+MyClient::MyClient(int serverport, const char* str_server_ip, int id,
+                   int message_size)
+    : Client(serverport, str_server_ip), id_(id), message_size_(message_size) {}
 
 void MyClient::ClientFunction(int connected_socket) {
   // 发送自己的id
-  std::cout << "发送自己的id:" << id_ << std::endl;
+  std::cerr << "发送自己的id:" << id_ << std::endl;
   send(connected_socket, reinterpret_cast<char*>(&id_), sizeof(id_), 0);
 
   // 创建 epoll 实例
@@ -77,14 +83,15 @@ void MyClient::ClientFunction(int connected_socket) {
     exit(-1);
   }
 
-  if (fcntl(connected_socket, F_SETFL, O_NONBLOCK) == -1) {
+  int val = fcntl(connected_socket, F_GETFL, 0);
+  if (fcntl(connected_socket, F_SETFL, val | O_NONBLOCK) == -1) {
     std::cerr << "Failed to set non-blocking mode." << std::endl;
     exit(-1);
   }
 
   // 添加连接的套接字到 epoll 实例中
   epoll_event event{};
-  event.events = EPOLLIN | EPOLLOUT;  // 监听可读事件, 可写事件
+  event.events = EPOLLIN | EPOLLOUT;  // 监听可读事件, 可写事件, 水平触发
   event.data.fd = connected_socket;
 
   if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, connected_socket, &event) == -1) {
@@ -95,6 +102,28 @@ void MyClient::ClientFunction(int connected_socket) {
   // 创建事件数组用于存储触发的事件
   epoll_event events[1024];
 
+  // 要发送的内容
+  Message message;
+  message.header.dst_id_ = (id_ & 1) ? id_ - 1 : id_ + 1;
+  message.header.src_id_ = id_;
+  message.header.origin_id_ = id_;
+  std::stringstream ss;
+  ss << "测试数据: " << id_ << " --------------> " << message.header.dst_id_;
+  std::string data = ss.str();
+  strncpy(message.data, data.c_str(), data.length());
+  message.header.data_len_ = data.length();
+
+  // 初始化缓冲区指针
+  char* ptr_send_message_start = reinterpret_cast<char*>(&message);
+  char* ptr_send_message_end =
+      ptr_send_message_start + sizeof(Header) + sizeof(char) * data.length();
+  /*
+   * 假设收到的跟发送的一样大
+   */
+  char* ptr_recv_message_start = ptr_send_message_end;
+
+  // 记录发送/接收了多少
+  ssize_t nsend = 0, nrecv = 0;
   while (1) {
     // 等待事件触发
     int num_events = epoll_wait(epoll_fd, events, 1024, -1);
@@ -102,55 +131,35 @@ void MyClient::ClientFunction(int connected_socket) {
       std::cerr << "Failed to wait for events." << std::endl;
       exit(-1);
     }
-    std::cout << "events num:" << num_events << std::endl;
+    // std::cerr << "events num:" << num_events << std::endl;
+
     for (int i = 0; i < num_events; ++i) {
-      if (events[i].events & EPOLLOUT) {
-        // 可写事件
-        Message message;
-        message.header.dst_id_ = (id_ & 1) ? id_ - 1 : id_ + 1;
-        message.header.src_id_ = id_;
-        std::stringstream ss;
-        ss << "测试数据: " << id_ << "--------------" << message.header.dst_id_;
-        std::string data = ss.str();
-        strncpy(message.data, data.c_str(), data.length());
-        message.header.data_len_ = data.length();
-        send(connected_socket, reinterpret_cast<char*>(&message),
-             sizeof(message), 0);
-      }
-
-      if (events[i].events & EPOLLIN) {
-        // 可读事件
-        const int buffer_size = 4 * 1024;
-        char buf[buffer_size];
-        bzero(buf, sizeof(buf));
-        auto nread = recv(connected_socket, buf, buffer_size, 0);
-        if (nread > 0) {
-          // 读内容
-
-          // 读报头
-          Header header;
-          memcpy(&header, buf, sizeof(header));
-          char data[1024];
-          bzero(data, sizeof(data));
-          memcpy(data, buf + sizeof(header), header.data_len_);
-          if (id_ == header.src_id_) {
-            // 收到回射信息 丢弃
-            std::cout << "客户端 " << id_ << "收到来自 " << header.src_id_
-                      << " 的回射消息：" << data << std::endl;
-          } else {
-            // 回射消息
-            std::cout << "客户端 " << id_ << " 收到来自 " << header.src_id_
-                      << " 的信息:" << data << std::endl;
-            // 更换报头
-            Message back_message;
-            back_message.header.src_id_ = id_;
-            back_message.header.dst_id_ = header.src_id_;
-            back_message.header.data_len_ = header.data_len_;
-            memcpy(back_message.data, data, header.data_len_);
-            send(connected_socket, reinterpret_cast<char*>(&back_message),
-                 sizeof(back_message), 0);
+      if ((events[i].events & EPOLLOUT) &&
+          ptr_send_message_end - ptr_send_message_start > 0) {
+        if ((nsend = send(connected_socket, ptr_send_message_start,
+                          ptr_send_message_end - ptr_send_message_start,
+                          MSG_NOSIGNAL)) < 0) {
+          if (errno != EWOULDBLOCK) {
+            std::cerr << "发送错误" << std::endl;
           }
         } else {
+          // std::cerr << "发送了 " << nsend << " 字节" << std::endl;
+          ptr_send_message_start += nsend;
+          if (ptr_send_message_start == ptr_send_message_end) {
+            std::cerr << id_ << " 发送完毕！" << std::endl;
+            ptr_recv_message_start = reinterpret_cast<char*>(&message);
+          }
+        }
+      }
+      if (events[i].events & EPOLLIN) {
+        // 可读事件
+        if ((nrecv = recv(connected_socket, ptr_recv_message_start,
+                          ptr_send_message_start - ptr_recv_message_start, 0)) <
+            0) {
+          if (errno != EWOULDBLOCK) {
+            std::cerr << "接收错误" << std::endl;
+          }
+        } else if (nrecv == 0) {
           // 服务器断连了
           std::cerr << "服务器断连了" << std::endl;
           if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, connected_socket, nullptr) ==
@@ -161,6 +170,28 @@ void MyClient::ClientFunction(int connected_socket) {
           }
           close(epoll_fd);
           return;
+        } else {
+          // std::cerr << "接收了 " << nrecv << " 字节" << std::endl;
+          ptr_recv_message_start += nrecv;
+
+          if (ptr_recv_message_start == ptr_send_message_end) {
+            if (message.header.origin_id_ == id_) {
+              // 收到回射信息 丢弃
+              std::cerr << "客户端 " << id_ << " 收到来自 "
+                        << message.header.src_id_ << " 的回射消息："
+                        << message.data << std::endl;
+              ptr_recv_message_start = reinterpret_cast<char*>(&message);
+            } else {
+              // 回射消息
+              std::cerr << "客户端 " << id_ << " 收到来自 "
+                        << message.header.src_id_ << " 的消息:" << message.data
+                        << std::endl;
+              std::swap(message.header.src_id_, message.header.dst_id_);
+              std::cerr << "更改报头: dst = " << message.header.dst_id_
+                        << std::endl;
+              ptr_send_message_start = reinterpret_cast<char*>(&message);
+            }
+          }
         }
       }
     }

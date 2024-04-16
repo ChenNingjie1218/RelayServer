@@ -22,11 +22,12 @@ class Client {
 
 class MyClient : public Client {
  public:
-  MyClient(int serverport, const char* str_server_ip, int id);
+  MyClient(int serverport, const char* str_server_ip, int id, int message_size);
   ~MyClient() = default;
 
  protected:
   void ClientFunction(int connected_socket) override;
   int id_;
+  int message_size_;
 };
 #endif

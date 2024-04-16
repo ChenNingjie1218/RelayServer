@@ -18,16 +18,19 @@ int main(int argc, char** argv) {
             << message_size << std::endl;
 
   int num_thread = 2 * num_sessions;
-  for (int i = 0; i < num_sessions; ++i) {
+  std::vector<std::thread*> v_thread;
+  for (int i = 0; i < num_thread; ++i) {
     int id = i;
     auto one_thread = new std::thread(
-        [](int i) {
-          MyClient client(5000, "127.0.0.1", i);
+        [&message_size](int i) {
+          MyClient client(5000, "127.0.0.1", i, message_size);
           client.Run();
         },
         id);
-    one_thread->detach();
+    v_thread.push_back(one_thread);
   }
-  pause();
+  for (auto& t : v_thread) {
+    t->join();
+  }
   return 0;
 }
