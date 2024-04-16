@@ -10,7 +10,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <chrono>
 #include <mutex>
+#include <ratio>
+
+#include "param.h"
 class Server {
  public:
   Server() = delete;
@@ -50,7 +54,5 @@ class RelayServer : public Server {
 
   static int thread_num_;    // 线程数
   std::mutex accept_mutex_;  // accept的锁
-
-  int count = 0;
 };
 #endif

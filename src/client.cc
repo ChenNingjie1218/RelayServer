@@ -29,6 +29,7 @@ Client::Client(int serverport, const char* str_server_ip)
 Client::~Client() {
   if (str_server_ip_) {
     delete[] str_server_ip_;
+    str_server_ip_ = nullptr;
   }
 }
 
@@ -57,9 +58,9 @@ void Client::Run() {
     close(client_socket);
     exit(-1);
   }
-
+#ifdef DEBUG
   std::cerr << "连接服务器成功" << std::endl;
-
+#endif
   ClientFunction(client_socket);
   //关闭socket
   close(client_socket);
@@ -73,7 +74,10 @@ MyClient::MyClient(int serverport, const char* str_server_ip, int id,
 
 void MyClient::ClientFunction(int connected_socket) {
   // 发送自己的id
+
+#ifdef DEBUG
   std::cerr << "发送自己的id:" << id_ << std::endl;
+#endif
   send(connected_socket, reinterpret_cast<char*>(&id_), sizeof(id_), 0);
 
   // 创建 epoll 实例
@@ -122,8 +126,22 @@ void MyClient::ClientFunction(int connected_socket) {
    */
   char* ptr_recv_message_start = ptr_send_message_end;
 
+  if (id_ & 1) {
+    // 有一个客户端作为回射服务器
+    ptr_send_message_start = ptr_send_message_end;
+    ptr_recv_message_start = reinterpret_cast<char*>(&message);
+  }
+
   // 记录发送/接收了多少
   ssize_t nsend = 0, nrecv = 0;
+
+  // 计时
+  auto start = std::chrono::high_resolution_clock::now();
+  auto end = std::chrono::high_resolution_clock::now();
+
+  extern int count;
+  extern std::chrono::duration<double, std::milli> duration;
+
   while (1) {
     // 等待事件触发
     int num_events = epoll_wait(epoll_fd, events, 1024, -1);
@@ -131,8 +149,9 @@ void MyClient::ClientFunction(int connected_socket) {
       std::cerr << "Failed to wait for events." << std::endl;
       exit(-1);
     }
+#ifdef DEBUG
     // std::cerr << "events num:" << num_events << std::endl;
-
+#endif
     for (int i = 0; i < num_events; ++i) {
       if ((events[i].events & EPOLLOUT) &&
           ptr_send_message_end - ptr_send_message_start > 0) {
@@ -143,10 +162,18 @@ void MyClient::ClientFunction(int connected_socket) {
             std::cerr << "发送错误" << std::endl;
           }
         } else {
-          // std::cerr << "发送了 " << nsend << " 字节" << std::endl;
+#ifdef DEBUG
+// std::cerr << "发送了 " << nsend << " 字节" << std::endl;
+#endif
+          if (ptr_send_message_start == reinterpret_cast<char*>(&message)) {
+            // 刚开始发
+            start = std::chrono::high_resolution_clock::now();
+          }
           ptr_send_message_start += nsend;
           if (ptr_send_message_start == ptr_send_message_end) {
+#ifdef DEBUG
             std::cerr << id_ << " 发送完毕！" << std::endl;
+#endif
             ptr_recv_message_start = reinterpret_cast<char*>(&message);
           }
         }
@@ -171,24 +198,46 @@ void MyClient::ClientFunction(int connected_socket) {
           close(epoll_fd);
           return;
         } else {
-          // std::cerr << "接收了 " << nrecv << " 字节" << std::endl;
+#ifdef DEBUG
+// std::cerr << "接收了 " << nrecv << " 字节" << std::endl;
+#endif
           ptr_recv_message_start += nrecv;
 
           if (ptr_recv_message_start == ptr_send_message_end) {
             if (message.header.origin_id_ == id_) {
-              // 收到回射信息 丢弃
+              // 收到回射信息
+
+#ifdef DEBUG
               std::cerr << "客户端 " << id_ << " 收到来自 "
                         << message.header.src_id_ << " 的回射消息："
                         << message.data << std::endl;
-              ptr_recv_message_start = reinterpret_cast<char*>(&message);
+#endif
+              // ptr_recv_message_start = reinterpret_cast<char*>(&message);
+              end = std::chrono::high_resolution_clock::now();
+              duration += end - start;
+              ++count;
+#ifdef DEBUG
+              // std::cerr << "延时:" << duration.count() << std::endl;
+#endif
+              std::swap(message.header.src_id_, message.header.dst_id_);
+#ifdef DEBUG
+              std::cerr << "更改报头: dst = " << message.header.dst_id_
+                        << std::endl;
+#endif
+              ptr_send_message_start = reinterpret_cast<char*>(&message);
             } else {
               // 回射消息
+
+#ifdef DEBUG
               std::cerr << "客户端 " << id_ << " 收到来自 "
                         << message.header.src_id_ << " 的消息:" << message.data
                         << std::endl;
+#endif
               std::swap(message.header.src_id_, message.header.dst_id_);
+#ifdef DEBUG
               std::cerr << "更改报头: dst = " << message.header.dst_id_
                         << std::endl;
+#endif
               ptr_send_message_start = reinterpret_cast<char*>(&message);
             }
           }

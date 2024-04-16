@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <chrono>
 #include <iostream>
 #include <thread>
 
@@ -34,6 +35,7 @@ Server::Server(int port, int length_of_queue_of_listen,
 Server::~Server() {
   if (str_bound_ip_) {
     delete[] str_bound_ip_;
+    str_bound_ip_ = nullptr;
   }
 }
 
@@ -141,6 +143,8 @@ void RelayServer::thread_main(int &listen_socket, RelayServer *obj) {
 
   // std::cerr << "等待客户端连接..." << std::endl;
 
+  // 记录转发数量
+  extern int count;
   while (1) {
     // 等待事件触发
     int num_events = epoll_wait(epoll_fd, events, 1024, -1);
@@ -169,9 +173,10 @@ void RelayServer::thread_main(int &listen_socket, RelayServer *obj) {
         obj->accept_mutex_.unlock();
         char ip_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &clientAddress.sin_addr, ip_str, INET_ADDRSTRLEN);
+#ifdef DEBUG
         std::cerr << "有客户端连接成功：" << ip_str << ":"
                   << ntohs(clientAddress.sin_port) << std::endl;
-
+#endif
         // 将新的连接套接字添加到 epoll 实例中
         event.events = EPOLLIN | EPOLLOUT;  // 监听可读可写事件，水平触发模式
         event.data.fd = client_socket;
@@ -191,7 +196,9 @@ void RelayServer::thread_main(int &listen_socket, RelayServer *obj) {
             // 接收id
             int id;
             recv(client_socket, reinterpret_cast<char *>(&id), sizeof(id), 0);
+#ifdef DEBUG
             std::cerr << "服务器建立新连接，id为：" << id << std::endl;
+#endif
             if (obj->id_to_fd_[id] == -1) {
               // 记录新链接
               obj->id_to_fd_[id] = client_socket;
@@ -240,12 +247,15 @@ void RelayServer::thread_main(int &listen_socket, RelayServer *obj) {
                 obj->ptr_recv_start[id] = nullptr;
                 obj->ptr_recv_end[id] = nullptr;
                 delete obj->buf[id];
+                obj->buf[id] = nullptr;
               }
               close(client_socket);
               std::cerr << "服务器与id为 " << id << " 的客户端断开连接"
                         << std::endl;
             } else {
-              // std::cerr << "接收了 " << nrecv << " 字节" << std::endl;
+#ifdef DEBUG
+// std::cerr << "接收了 " << nrecv << " 字节" << std::endl;
+#endif
               obj->ptr_recv_start[id] += nrecv;
               if (obj->ptr_recv_start[id] == obj->ptr_recv_end[id]) {
                 if (obj->dst_id_[id] == -1) {
@@ -255,18 +265,24 @@ void RelayServer::thread_main(int &listen_socket, RelayServer *obj) {
                          sizeof(header));
                   obj->dst_id_[id] = header.dst_id_;
                   obj->src_id_[header.dst_id_] = id;
+#ifdef DEBUG
                   std::cerr << "服务器收到来自" << header.src_id_ << "发给"
                             << header.dst_id_ << "的长为" << header.data_len_
                             << "信息" << std::endl;
+#endif
                   // 设置尾部指针准备接收数据
                   obj->ptr_recv_end[id] += header.data_len_ * sizeof(char);
                   obj->ptr_send_start[id] = obj->ptr_recv_end[id];
                 } else {
+#ifdef DEBUG
                   std::cerr << id << " 的消息接收完了" << std::endl;
+#endif
                   Message message;
                   memcpy(reinterpret_cast<char *>(&message), obj->buf[id],
                          obj->ptr_recv_start[id] - obj->buf[id]);
+#ifdef DEBUG
                   std::cerr << message.data << std::endl;
+#endif
                   // 可以开始转发了
                   obj->ptr_send_start[id] = obj->buf[id];
                   // event.events =
@@ -288,7 +304,9 @@ void RelayServer::thread_main(int &listen_socket, RelayServer *obj) {
                       obj->ptr_send_start[obj->src_id_[id]] >
                   0) {
             int src_id = obj->src_id_[id];
-            // std::cerr << "目的：" << id << " 源:" << src_id << std::endl;
+#ifdef DEBUG
+// std::cerr << "目的：" << id << " 源:" << src_id << std::endl;
+#endif
             ssize_t nsend;
             if ((nsend = send(
                      client_socket, obj->ptr_send_start[src_id],
@@ -298,18 +316,22 @@ void RelayServer::thread_main(int &listen_socket, RelayServer *obj) {
                 std::cerr << "发送出错" << std::endl;
               }
             } else {
-              // std::cerr << "发送 " << nsend << " 字节" << std::endl;
+#ifdef DEBUG
+// std::cerr << "发送 " << nsend << " 字节" << std::endl;
+#endif
               obj->ptr_send_start[src_id] += nsend;
               if (obj->ptr_send_start[src_id] == obj->ptr_recv_end[src_id]) {
+#ifdef DEBUG
                 std::cerr << src_id << " 的消息转发完了" << std::endl;
                 std::cerr << "重置缓冲区 " << src_id << std::endl;
+#endif
                 obj->ptr_recv_start[src_id] = obj->buf[src_id];
                 obj->ptr_recv_end[src_id] = obj->buf[src_id] + sizeof(Header);
                 obj->ptr_send_start[src_id] = obj->ptr_recv_end[src_id];
                 obj->dst_id_[src_id] = -1;
                 obj->src_id_[id] = -1;
 
-                ++obj->count;
+                ++count;
                 // event.events = EPOLLIN;  // 结束转发时 取消可写监听
                 // event.data.fd = client_socket;
                 // epoll_ctl(epoll_fd, EPOLL_CTL_MOD, client_socket, &event);

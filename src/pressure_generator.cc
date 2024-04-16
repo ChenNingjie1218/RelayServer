@@ -1,7 +1,18 @@
+#include <csignal>
 #include <thread>
 #include <vector>
 
 #include "client.h"
+
+// 记录延时
+std::chrono::duration<double, std::milli> duration;
+int count;
+
+void signalHandler(int signal) {
+  std::cout << "平均延时：" << duration.count() / count << " ms" << std::endl;
+  exit(signal);
+}
+
 /*
   第一个参数为对话数
   第二个参数为报文大小
@@ -11,12 +22,11 @@ int main(int argc, char** argv) {
     std::cerr << "参数错误" << std::endl;
     return -1;
   }
-
+  signal(SIGINT, signalHandler);
   int num_sessions = atoi(argv[1]);
   const int message_size = atoi(argv[2]);
   std::cout << "产生会话数为：" << num_sessions << ", 报文大小为："
             << message_size << std::endl;
-
   int num_thread = 2 * num_sessions;
   std::vector<std::thread*> v_thread;
   for (int i = 0; i < num_thread; ++i) {
