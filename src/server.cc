@@ -139,7 +139,7 @@ void RelayServer::thread_main(int &listen_socket, RelayServer *obj) {
   }
 
   // 创建事件数组用于存储触发的事件
-  epoll_event events[1024];
+  epoll_event events[10240];
 
   // std::cerr << "等待客户端连接..." << std::endl;
 
