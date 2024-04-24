@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
   int num_sessions = atoi(argv[1]);
   const int message_size = atoi(argv[2]);
   std::cout << "产生会话数为：" << num_sessions << ", 报文大小为："
-            << message_size << std::endl;
+            << message_size << "B" << std::endl;
   int num_thread = 2 * num_sessions;
   std::vector<std::thread*> v_thread;
   for (int i = 0; i < num_thread; ++i) {

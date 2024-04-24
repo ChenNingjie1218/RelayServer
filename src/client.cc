@@ -113,6 +113,9 @@ void MyClient::ClientFunction(int connected_socket) {
   message.header.origin_id_ = id_;
   std::stringstream ss;
   ss << "测试数据: " << id_ << " --------------> " << message.header.dst_id_;
+  for (int i = 0; i < message_size_; ++i) {
+    ss << " ";
+  }
   std::string data = ss.str();
   strncpy(message.data, data.c_str(), data.length());
   message.header.data_len_ = data.length();

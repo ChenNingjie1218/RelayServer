@@ -11,6 +11,6 @@ struct Header {
 
 struct Message {
   Header header;
-  char data[1024];
+  char data[11 * 1024];
 };
 #endif
