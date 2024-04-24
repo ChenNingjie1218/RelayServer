@@ -14,8 +14,8 @@
 #include <thread>
 
 #include "message.h"
-ssize_t RelayServer::buffer_size = 4 * 1024 * 1024;  // 暂存数据缓冲区的大小
-int RelayServer::thread_num_ = 1;                    // 线程数
+ssize_t RelayServer::buffer_size = 11 * 1024;  // 暂存数据缓冲区的大小
+int RelayServer::thread_num_ = 1;              // 线程数
 
 // 构造函数
 Server::Server(int port, int length_of_queue_of_listen,
