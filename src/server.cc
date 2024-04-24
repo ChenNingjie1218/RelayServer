@@ -228,7 +228,7 @@ void RelayServer::thread_main(int &listen_socket, RelayServer *obj) {
                               obj->ptr_recv_end[id] - obj->ptr_recv_start[id],
                               MSG_NOSIGNAL)) < 0) {
               if (errno != EWOULDBLOCK) {
-                std::cerr << "接收错误" << std::endl;
+                std::cerr << "接收错误, errno = " << errno << std::endl;
               }
             } else if (nrecv == 0) {
               // 断开连接

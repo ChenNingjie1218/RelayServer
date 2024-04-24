@@ -187,7 +187,7 @@ void MyClient::ClientFunction(int connected_socket) {
                           ptr_send_message_start - ptr_recv_message_start, 0)) <
             0) {
           if (errno != EWOULDBLOCK) {
-            std::cerr << "接收错误" << std::endl;
+            std::cerr << "接收错误, errno = " << errno << std::endl;
           }
         } else if (nrecv == 0) {
           // 服务器断连了
