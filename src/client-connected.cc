@@ -26,7 +26,7 @@ ssize_t ClientConnected::RecvData(
                     MSG_NOSIGNAL))  // MSG_NOSIGNAL 防止SIGPIP终止应用程序
       < 0) {
     if (errno != EWOULDBLOCK) {
-      std::cerr << "接收错误, errno = " << errno << std::endl;
+      std::cerr << "接收错误:" << strerror(errno) << std::endl;
     }
   } else if (nrecv > 0) {
     buffer_->MoveRecvStart(nrecv);
@@ -95,7 +95,7 @@ void ClientConnected::SendData() {
                       src_buffer->GetSendEnd() - src_buffer->GetSendStart(),
                       MSG_NOSIGNAL)) < 0) {
       if (errno != EWOULDBLOCK) {
-        std::cerr << "发送出错, errno = " << errno << std::endl;
+        std::cerr << "发送出错:" << strerror(errno) << std::endl;
       }
     } else {
       src_buffer->MoveSendStart(nsend);

@@ -173,7 +173,7 @@ void MyClient::EchoServer(int connected_socket) {
                       buffer->GetRecvEnd() - buffer->GetRecvStart(),
                       MSG_NOSIGNAL)) < 0) {
       if (errno != EWOULDBLOCK) {
-        std::cerr << "回射服务器接收错误, errno = " << errno << std::endl;
+        std::cerr << "回射服务器接收错误" << strerror(errno) << std::endl;
       }
     } else if (nrecv == 0) {
       // 服务器断连了
@@ -213,7 +213,7 @@ void MyClient::EchoServer(int connected_socket) {
                       buffer->GetSendEnd() - buffer->GetSendStart(),
                       MSG_NOSIGNAL)) < 0) {
       if (errno != EWOULDBLOCK) {
-        std::cerr << "回射服务器发送出错, errno = " << errno << std::endl;
+        std::cerr << "回射服务器发送出错" << strerror(errno) << std::endl;
       }
     } else {
       buffer->MoveSendStart(nsend);

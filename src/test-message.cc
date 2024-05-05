@@ -55,7 +55,7 @@ int TestMessage::Test() {
     if ((nrecv = recv(socket_, ptr_recv_start_, ptr_recv_end_ - ptr_recv_start_,
                       MSG_NOSIGNAL)) < 0) {
       if (errno != EWOULDBLOCK) {
-        std::cerr << "压力发生器接收出错, errno = " << errno << std::endl;
+        std::cerr << "压力发生器接收出错:" << strerror(errno) << std::endl;
       }
     } else if (nrecv == 0) {
       // 服务器断开连接
@@ -69,7 +69,7 @@ int TestMessage::Test() {
     if ((nsend = send(socket_, ptr_send_start_, ptr_send_end_ - ptr_send_start_,
                       MSG_NOSIGNAL)) < 0) {
       if (errno != EWOULDBLOCK) {
-        std::cerr << "压力发生器发送出错, errno = " << errno << std::endl;
+        std::cerr << "压力发生器发送出错:" << strerror(errno) << std::endl;
       }
     } else {
       ptr_send_start_ += nsend;
