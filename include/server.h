@@ -10,10 +10,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <chrono>
+#include <map>
 #include <mutex>
-#include <ratio>
 
+#include "client-connected.h"
 #include "param.h"
 class Server {
  public:
@@ -38,21 +38,11 @@ class RelayServer : public Server {
 
  protected:
   // 转发功能
-  void ServerFunction(int &connected_socket) override;
-  static void thread_main(int &listen_socket, RelayServer *obj);
-  int id_to_fd_[20010];             // 散列表映射id与fd
-  int fd_to_id_[20010];             // 散列表映射fd与id
-  int dst_id_[20010];               // 散列表目的id
-  int src_id_[20010];               // 散列表源id
-  bool is_first_connected_[20010];  // 刚连接上
-  char *buf[20010];                 // 暂存数据缓冲区
-  static ssize_t buffer_size;       // 暂存数据缓冲区的大小
+  void ServerFunction(int &listen_socket) override;
 
-  char *ptr_send_start[20010];  // 发送的起始指针
-  char *ptr_recv_start[20010];  // 接收的起始指针 同时也是发送的末尾指针
-  char *ptr_recv_end[20010];  // 接收的末尾指针
-
-  static int thread_num_;    // 线程数
   std::mutex accept_mutex_;  // accept的锁
+  ClientConnected
+      *fd_to_client_[MAX_CLIENT_NUM];  // 散列表映射fd与所关联的客户端
+  std::map<int, ClientConnected *> id_to_client_;
 };
 #endif

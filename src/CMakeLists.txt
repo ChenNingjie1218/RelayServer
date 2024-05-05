@@ -1,9 +1,10 @@
 include_directories(${CMAKE_SOURCE_DIR}/include)
 add_executable(relay_server relay_server.cc)
-add_executable(pressure_generator pressure_generator.cc)
+aux_source_directory(. DIR_SRCS)
+list(REMOVE_ITEM DIR_SRCS "./relay_server.cc" " ./pressure_generator.cc")
+add_library(mylib ${DIR_SRCS})
+target_link_libraries(relay_server mylib)
 
 add_library(client client.cc)
-add_library(server server.cc)
-
-target_link_libraries(relay_server server)
-target_link_libraries(pressure_generator client)
+add_executable(pressure_generator pressure_generator.cc)
+target_link_libraries(pressure_generator mylib)

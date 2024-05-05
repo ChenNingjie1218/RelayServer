@@ -9,6 +9,7 @@
 #include <chrono>
 #include <iostream>
 
+#include "message.h"
 #include "param.h"
 class Client {
  public:
@@ -30,6 +31,11 @@ class MyClient : public Client {
 
  protected:
   void ClientFunction(int connected_socket) override;
+  // 担任压力产生器
+  void PressureGenerator(int connected_socket);
+  // 担任回射服务器
+  void EchoServer(int connected_socket);
+
   int id_;
   int message_size_;
 };
