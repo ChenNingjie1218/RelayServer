@@ -29,11 +29,13 @@ ssize_t ClientConnected::RecvData(
       std::cerr << "接收错误:" << strerror(errno) << std::endl;
     }
   } else if (nrecv > 0) {
+#ifdef DEBUG
+    std::cerr << "服务器接收到" << nrecv << "字节数据" << std::endl;
+#endif
     buffer_->MoveRecvStart(nrecv);
     if (dst_id_ != -1) {
       // 读取的是数据
       buffer_->UpdateSendEnd();
-      rest_data_len_ -= nrecv;
     }
     if (buffer_->IsRecvFinish()) {
       if (id_ == -1) {
@@ -63,10 +65,12 @@ ssize_t ClientConnected::RecvData(
         if (id_to_client.find(dst_id_) != id_to_client.end()) {
           id_to_client[dst_id_]->SetSrcClient(this);
         }
-        // 开始接收数据
-        buffer_->UpdateRecvEnd(rest_data_len_);
         // 开始转发
         buffer_->UpdateSendEnd();
+
+        // 开始接收数据
+        buffer_->UpdateRecvEnd(rest_data_len_);
+
 #ifdef DEBUG
         std::cerr << "服务器收到来自" << header.src_id_ << "发给"
                   << header.dst_id_ << "的长为" << header.data_len_ << "信息"
@@ -91,30 +95,36 @@ void ClientConnected::SendData() {
     // 源端在线 从源端的缓冲区读取数据
     ssize_t nsend;
     Buffer* src_buffer = src_client_->GetBuffer();
-    if ((nsend = send(fd_, src_buffer->GetSendStart(),
-                      src_buffer->GetSendEnd() - src_buffer->GetSendStart(),
-                      MSG_NOSIGNAL)) < 0) {
-      if (errno != EWOULDBLOCK) {
-        std::cerr << "发送出错:" << strerror(errno) << std::endl;
-      }
-    } else {
-      src_buffer->MoveSendStart(nsend);
-      if (src_buffer->IsSendFinish()) {
-        src_buffer->UpdateSendEnd();
+    if (src_buffer->GetSendEnd() > src_buffer->GetSendStart()) {
+      if ((nsend = send(fd_, src_buffer->GetSendStart(),
+                        src_buffer->GetSendEnd() - src_buffer->GetSendStart(),
+                        MSG_NOSIGNAL)) < 0) {
+        if (errno != EWOULDBLOCK) {
+          std::cerr << "发送出错:" << strerror(errno) << std::endl;
+        }
+      } else {
+#ifdef DEBUG
+        std::cerr << "服务器转发" << nsend << "字节" << std::endl;
+#endif
+        src_buffer->MoveSendStart(nsend);
         // 源端接收数据受该端发送数据所限制
         int rest_data_len = src_client_->GetRestDataLen();
         if (rest_data_len) {
           src_buffer->UpdateRecvEnd(rest_data_len);
-        } else if (src_buffer->IsSendFinish()) {
-          // 转发完成
+        }
+        if (src_buffer->IsSendFinish()) {
+          src_buffer->UpdateSendEnd();
+          if (src_buffer->IsSendFinish()) {
+            // 转发完成
 
 #ifdef DEBUG
-          std::cerr << src_client_->GetId() << " 的消息转发完了" << std::endl;
+            std::cerr << src_client_->GetId() << " 的消息转发完了" << std::endl;
 #endif
 
-          src_client_->ResetDstClient();
-          ++relay_count;
-          src_client_ = nullptr;
+            src_client_->ResetDstClient();
+            ++relay_count;
+            src_client_ = nullptr;
+          }
         }
       }
     }

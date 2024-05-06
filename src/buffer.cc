@@ -48,17 +48,24 @@ bool Buffer::IsSendFinish() { return ptr_send_start_ == ptr_recv_end_; }
 
 // 更新ptr_recv_end
 void Buffer::UpdateRecvEnd(int& rest_size) {
-  if (ptr_recv_end_ == buf_ + buffer_size_) {
+  if (ptr_recv_start_ == buf_ + buffer_size_) {
     // 已经位于缓冲区尾部 将其置为首位置
     ptr_recv_end_ = buf_;
     ptr_recv_start_ = buf_;
   }
 
-  if (ptr_recv_end_ + rest_size > buf_ + buffer_size_) {
+  if (ptr_recv_end_ <= ptr_send_start_ &&
+      ptr_recv_end_ + rest_size > ptr_send_start_) {
+    // 超过发送区 要等待发送完
+    rest_size -= ptr_send_start_ - ptr_recv_end_;
+    ptr_recv_end_ = ptr_send_start_;
+  } else if (ptr_recv_end_ + rest_size > buf_ + buffer_size_) {
     // 超过缓冲区 只有可能是接收超长数据时
+    rest_size -= buf_ + buffer_size_ - ptr_recv_end_;
     ptr_recv_end_ = buf_ + buffer_size_;
   } else {
     ptr_recv_end_ += rest_size;
+    rest_size = 0;
   }
 }
 

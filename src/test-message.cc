@@ -62,17 +62,25 @@ int TestMessage::Test() {
       std::cerr << "中继服务器与压力发生器断连" << std::endl;
       return 1;
     } else {
+#ifdef DEBUG
+      std::cerr << "压力发生器接收" << nrecv << std::endl;
+#endif
       ptr_recv_start_ += nrecv;
     }
 
     // 发送
-    if ((nsend = send(socket_, ptr_send_start_, ptr_send_end_ - ptr_send_start_,
-                      MSG_NOSIGNAL)) < 0) {
-      if (errno != EWOULDBLOCK) {
-        std::cerr << "压力发生器发送出错:" << strerror(errno) << std::endl;
+    if (ptr_send_end_ - ptr_send_start_ > 0) {
+      if ((nsend = send(socket_, ptr_send_start_,
+                        ptr_send_end_ - ptr_send_start_, MSG_NOSIGNAL)) < 0) {
+        if (errno != EWOULDBLOCK) {
+          std::cerr << "压力发生器发送出错:" << strerror(errno) << std::endl;
+        }
+      } else {
+#ifdef DEBUG
+        std::cerr << "压力发生器发送" << nsend << std::endl;
+#endif
+        ptr_send_start_ += nsend;
       }
-    } else {
-      ptr_send_start_ += nsend;
     }
   }
 #ifdef DEBUG

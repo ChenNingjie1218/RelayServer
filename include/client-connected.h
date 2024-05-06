@@ -42,7 +42,7 @@ class ClientConnected {
   int fd_;                       // 所用的fd
   int dst_id_;                   // 目的客户端的id
   ClientConnected* src_client_;  // 源客户端 用于从该客户端的缓冲区接收数据
-  int rest_data_len_;  // 该客户端发送的剩余数据长度
+  int rest_data_len_;  // 该客户端还未分配缓冲区的剩余数据长度
   Buffer* buffer_;     // 接收该客户端发送数据的数据缓冲区
 };
 #endif

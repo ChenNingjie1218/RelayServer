@@ -92,6 +92,7 @@ void MyClient::ClientFunction(int connected_socket) {
   if (id_ & 1) {
     // id为奇数担任回射服务器的角色
     EchoServer(connected_socket);
+
   } else {
     // id为偶数担任压力产生器的角色
     PressureGenerator(connected_socket);
@@ -142,7 +143,8 @@ void MyClient::PressureGenerator(int connected_socket) {
       case 1:
         // 连接中断
         std::cerr << "测试失败：连接中断" << std::endl;
-        break;
+        delete test_message;
+        return;
       case -1:
         // 回射信息不符
         std::cerr << "测试失败：回射信息不符" << std::endl;
@@ -153,9 +155,9 @@ void MyClient::PressureGenerator(int connected_socket) {
         ++count;
         end = std::chrono::high_resolution_clock::now();
         duration += end - start;
+        delete test_message;
         break;
     }
-    delete test_message;
   }
 }
 // 担任回射服务器
@@ -166,7 +168,7 @@ void MyClient::EchoServer(int connected_socket) {
   // 初始化报头，dst_id_为-1表示报头还没读到
   Header header;
   header.dst_id_ = -1;
-  int rest_data_len = 0;  // 未读的报文长度
+  int rest_data_len = 0;  // 还未分配缓冲区的报文长度
   while (1) {
     // 接收
     if ((nrecv = recv(connected_socket, buffer->GetRecvStart(),
@@ -181,10 +183,12 @@ void MyClient::EchoServer(int connected_socket) {
       return;
     } else {
       buffer->MoveRecvStart(nrecv);
+#ifdef DEBUG
+      std::cerr << "回射服务器接收到 " << nrecv << " 字节" << std::endl;
+#endif
       if (header.dst_id_ != -1) {
         // 读取的是数据
         buffer->UpdateSendEnd();
-        rest_data_len -= nrecv;
       }
       if (buffer->IsRecvFinish()) {
         if (header.dst_id_ == -1) {
@@ -197,38 +201,51 @@ void MyClient::EchoServer(int connected_socket) {
           std::swap(header.dst_id_, header.src_id_);
           memcpy(buffer->GetBuffer(), &header, sizeof(Header));
           rest_data_len = header.data_len_;
-          // 开始接收数据
-          buffer->UpdateRecvEnd(rest_data_len);
           // 开始回射
           buffer->UpdateSendEnd();
+          // 开始接收数据
+          buffer->UpdateRecvEnd(rest_data_len);
         } else if (rest_data_len) {
           // 读数据导致缓冲区满
+
+#ifdef DEBUG
+          std::cerr << "回射服务器缓冲区已满" << std::endl;
+#endif
           buffer->UpdateRecvEnd(rest_data_len);
         }
       }
     }
 
     // 发送
-    if ((nsend = send(connected_socket, buffer->GetSendStart(),
-                      buffer->GetSendEnd() - buffer->GetSendStart(),
-                      MSG_NOSIGNAL)) < 0) {
-      if (errno != EWOULDBLOCK) {
-        std::cerr << "回射服务器发送出错" << strerror(errno) << std::endl;
-      }
-    } else {
-      buffer->MoveSendStart(nsend);
-      if (buffer->IsSendFinish()) {
-        buffer->UpdateSendEnd();
+    if (buffer->GetSendEnd() > buffer->GetSendStart()) {
+      if ((nsend = send(connected_socket, buffer->GetSendStart(),
+                        buffer->GetSendEnd() - buffer->GetSendStart(),
+                        MSG_NOSIGNAL)) < 0) {
+        if (errno != EWOULDBLOCK) {
+          std::cerr << "回射服务器发送出错" << strerror(errno) << std::endl;
+        }
+      } else {
+#ifdef DEBUG
+        std::cerr << "回射服务器发送了 " << nsend << " 字节" << std::endl;
+#endif
+        buffer->MoveSendStart(nsend);
         // 接收数据受发送数据所限制
         if (rest_data_len) {
           buffer->UpdateRecvEnd(rest_data_len);
-        } else {
-          // 转发完成
+        }
+        if (buffer->IsSendFinish()) {
 #ifdef DEBUG
-          std::cerr << header.dst_id_ << " 的消息回射完了" << std::endl;
+          std::cerr << "回射服务器发送完了" << std::endl;
 #endif
-          header.dst_id_ = -1;
-          buffer->InitPtr();
+          buffer->UpdateSendEnd();
+          if (buffer->IsSendFinish()) {
+            // 转发完成
+#ifdef DEBUG
+            std::cerr << header.dst_id_ << " 的消息回射完了" << std::endl;
+#endif
+            header.dst_id_ = -1;
+            buffer->InitPtr();
+          }
         }
       }
     }
