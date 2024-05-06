@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
   for (int i = 0; i < num_sessions; ++i) {
     // ---- 压力发生客户端 ----
     PressureClient* onePressureClient =
-        new PressureClient(5000, "127.0.0.1", 2 * i, message_size, -1);
+        new PressureClient(5000, "116.205.224.19", 2 * i, message_size, -1);
 
     // 将新的连接套接字添加到 epoll 实例中
     int Pressure_fd = onePressureClient->Run();
@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
 
     // ---- 回射客户端 ----
     EchoServerClient* oneEchoServerClient =
-        new EchoServerClient(5000, "127.0.0.1", 2 * i + 1);
+        new EchoServerClient(5000, "116.205.224.19", 2 * i + 1);
     // 将新的连接套接字添加到 epoll 实例中
     int EchoServer_fd = oneEchoServerClient->Run();
     event.events = EPOLLIN | EPOLLOUT;  // 监听可读可写事件，水平触发模式
@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
                       << std::endl;
             exit(-1);
           }
-
+          delete client;
           fd_to_client[connected_socket] = nullptr;
           close(connected_socket);
           continue;

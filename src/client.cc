@@ -199,6 +199,13 @@ EchoServerClient::EchoServerClient(int serverport, const char* str_server_ip,
   rest_data_len_ = 0;
   has_dst_ = -1;
 }
+
+EchoServerClient::~EchoServerClient() {
+  if (buffer_) {
+    delete buffer_;
+    buffer_ = nullptr;
+  }
+}
 ssize_t EchoServerClient::ReadData(int fd) {
   ssize_t nrecv;
   // 接收

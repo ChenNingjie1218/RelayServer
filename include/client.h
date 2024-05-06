@@ -49,7 +49,7 @@ class PressureClient : public Client {
 class EchoServerClient : public Client {
  public:
   EchoServerClient(int serverport, const char* str_server_ip, int id);
-  ~EchoServerClient() = default;
+  ~EchoServerClient();
   ssize_t ReadData(int fd) override;
   void SendData(int fd) override;
 
