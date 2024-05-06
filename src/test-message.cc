@@ -8,9 +8,8 @@
 
 #include "message.h"
 #include "param.h"
-TestMessage::TestMessage(int src_id, int dst_id, int test_id, int message_size,
-                         int socket)
-    : socket_(socket) {
+TestMessage::TestMessage(int src_id, int dst_id, int test_id,
+                         int message_size) {
   origin_message_ = new Message();
   origin_message_->header.src_id_ = src_id;
   origin_message_->header.dst_id_ = dst_id;
@@ -41,55 +40,4 @@ TestMessage::TestMessage(int src_id, int dst_id, int test_id, int message_size,
 TestMessage::~TestMessage() {
   delete origin_message_;
   delete back_message_;
-}
-
-/*
- * @ret 0: success
- *    -1: fail
- *      1: 连接中断
- */
-int TestMessage::Test() {
-  ssize_t nsend, nrecv;
-  while (ptr_recv_start_ != ptr_recv_end_) {
-    // 接收
-    if ((nrecv = recv(socket_, ptr_recv_start_, ptr_recv_end_ - ptr_recv_start_,
-                      MSG_NOSIGNAL)) < 0) {
-      if (errno != EWOULDBLOCK) {
-        std::cerr << "压力发生器接收出错:" << strerror(errno) << std::endl;
-      }
-    } else if (nrecv == 0) {
-      // 服务器断开连接
-      std::cerr << "中继服务器与压力发生器断连" << std::endl;
-      return 1;
-    } else {
-#ifdef DEBUG
-      std::cerr << "压力发生器接收" << nrecv << std::endl;
-#endif
-      ptr_recv_start_ += nrecv;
-    }
-
-    // 发送
-    if (ptr_send_end_ - ptr_send_start_ > 0) {
-      if ((nsend = send(socket_, ptr_send_start_,
-                        ptr_send_end_ - ptr_send_start_, MSG_NOSIGNAL)) < 0) {
-        if (errno != EWOULDBLOCK) {
-          std::cerr << "压力发生器发送出错:" << strerror(errno) << std::endl;
-        }
-      } else {
-#ifdef DEBUG
-        std::cerr << "压力发生器发送" << nsend << std::endl;
-#endif
-        ptr_send_start_ += nsend;
-      }
-    }
-  }
-#ifdef DEBUG
-  std::cerr << "回射信息为:" << back_message_->data << std::endl;
-#endif
-  if (strncmp(origin_message_->data, back_message_->data,
-              origin_message_->header.data_len_) == 0) {
-    return 0;
-  } else {
-    return -1;
-  }
 }

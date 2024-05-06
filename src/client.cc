@@ -13,11 +13,11 @@
 
 #include "buffer.h"
 #include "message.h"
+#include "param.h"
 #include "test-message.h"
-
 // 构造函数
-Client::Client(int serverport, const char* str_server_ip)
-    : serverport_(serverport) {
+Client::Client(int serverport, const char* str_server_ip, int id)
+    : serverport_(serverport), id_(id) {
   //存服务器的ip
   if (str_server_ip) {
     auto len = strlen(str_server_ip) + 1;
@@ -26,6 +26,10 @@ Client::Client(int serverport, const char* str_server_ip)
   } else {
     str_server_ip_ = NULL;
   }
+
+  // 还未发送id
+  is_send_id_ = false;
+  ptr_send_id_ = reinterpret_cast<char*>(&id_);
 }
 
 // 析构函数
@@ -36,7 +40,7 @@ Client::~Client() {
   }
 }
 
-void Client::Run() {
+int Client::Run() {
   // 创建客户端套接字
   int client_socket = socket(AF_INET, SOCK_STREAM, 0);
   if (-1 == client_socket) {
@@ -64,188 +68,214 @@ void Client::Run() {
 #ifdef DEBUG
   std::cerr << "连接服务器成功" << std::endl;
 #endif
-  ClientFunction(client_socket);
-  //关闭socket
-  close(client_socket);
-}
-
-// MyClient
-
-MyClient::MyClient(int serverport, const char* str_server_ip, int id,
-                   int message_size)
-    : Client(serverport, str_server_ip), id_(id), message_size_(message_size) {}
-
-void MyClient::ClientFunction(int connected_socket) {
-  // 发送自己的id
-
-#ifdef DEBUG
-  std::cerr << "发送自己的id:" << id_ << std::endl;
-#endif
-  send(connected_socket, reinterpret_cast<char*>(&id_), sizeof(id_), 0);
   // 将连接套接字设置为非阻塞模式
-  int val = fcntl(connected_socket, F_GETFL);
-  if (fcntl(connected_socket, F_SETFL, val | O_NONBLOCK) == -1) {
-    std::cerr << "Failed to set connected socket to non-blocking mode."
+  int val = fcntl(client_socket, F_GETFL);
+  if (fcntl(client_socket, F_SETFL, val | O_NONBLOCK) == -1) {
+    std::cerr << "Failed to set client socket to non-blocking mode."
               << std::endl;
     exit(-1);
   }
-  if (id_ & 1) {
-    // id为奇数担任回射服务器的角色
-    EchoServer(connected_socket);
+  return client_socket;
+}
 
-  } else {
-    // id为偶数担任压力产生器的角色
-    PressureGenerator(connected_socket);
+// PressureClient
+
+PressureClient::PressureClient(int serverport, const char* str_server_ip,
+                               int id, int message_size, int max_test_time)
+    : Client(serverport, str_server_ip, id),
+      message_size_(message_size),
+      max_test_time_(max_test_time) {
+  test_message_ = nullptr;
+  test_time_ = 1;
+}
+PressureClient::~PressureClient() {
+  if (test_message_) {
+    delete test_message_;
+    test_message_ = nullptr;
   }
 }
 
-// 担任压力发生器
-void MyClient::PressureGenerator(int connected_socket) {
-  // 计时
-  auto start = std::chrono::high_resolution_clock::now();
-  auto end = std::chrono::high_resolution_clock::now();
-  extern std::chrono::duration<double, std::milli> duration;
-  // 计数
-  extern int count;
-
-  // 测试次数
-  // int test_count = 1;
-  // for (int i = 1; i <= test_count; ++i) {
-  //   TestMessage* test_message =
-  //       new TestMessage(id_, id_ + 1, i, message_size_, connected_socket);
-  //   start = std::chrono::high_resolution_clock::now();
-  //   switch (test_message->Test()) {
-  //     case 1:
-  //       // 连接中断
-  //       std::cerr << "测试失败：连接中断" << std::endl;
-  //       break;
-  //     case -1:
-  //       // 回射信息不符
-  //       std::cerr << "测试失败：回射信息不符" << std::endl;
-  //       exit(-1);
-  //       break;
-  //     case 0:
-  //       // 测试成功
-  //       ++count;
-  //       end = std::chrono::high_resolution_clock::now();
-  //       duration += end - start;
-  //       break;
-  //   }
-  //   delete test_message;
-  // }
-
-  // 无限测试
-  while (1) {
-    TestMessage* test_message =
-        new TestMessage(id_, id_ + 1, 1, message_size_, connected_socket);
-    start = std::chrono::high_resolution_clock::now();
-    switch (test_message->Test()) {
-      case 1:
-        // 连接中断
-        std::cerr << "测试失败：连接中断" << std::endl;
-        delete test_message;
-        return;
-      case -1:
-        // 回射信息不符
-        std::cerr << "测试失败：回射信息不符" << std::endl;
-        exit(-1);
-        break;
-      case 0:
-        // 测试成功
+ssize_t PressureClient::ReadData(int fd) {
+  // 接收
+  ssize_t nrecv;
+  char* ptr_recv_start_ = test_message_->GetPtrRecvStart();
+  char* ptr_recv_end_ = test_message_->GetPtrRecvEnd();
+  if ((nrecv = recv(fd, ptr_recv_start_, ptr_recv_end_ - ptr_recv_start_,
+                    MSG_NOSIGNAL)) < 0) {
+    if (errno != EWOULDBLOCK) {
+      std::cerr << "压力发生器接收出错:" << strerror(errno) << std::endl;
+    }
+  } else if (nrecv == 0) {
+    // 服务器断开连接
+    std::cerr << "中继服务器与压力发生器断连" << std::endl;
+  } else {
+#ifdef DEBUG
+    std::cerr << "压力发生器接收" << nrecv << std::endl;
+#endif
+    test_message_->MoveRecvStart(nrecv);
+    if (test_message_->GetPtrRecvStart() == ptr_recv_end_) {
+      if (test_message_->CheckMessage()) {
+#ifdef DEBUG
+        std::cerr << "压力发生器接收到正确的回射信息" << std::endl;
+#endif
+        // 计数
+        extern int count;
         ++count;
+
+        // 计时
+        auto end = std::chrono::high_resolution_clock::now();
+        extern std::chrono::duration<double, std::milli> duration;
         end = std::chrono::high_resolution_clock::now();
-        duration += end - start;
-        delete test_message;
-        break;
+        duration += end - start_;
+        // std::chrono::duration_cast<std::chrono::milliseconds>(end - start_);
+        //  重置测试信息
+        delete test_message_;
+        if (max_test_time_ != -1 && test_time_ >= max_test_time_) {
+          return 0;
+        }
+        test_message_ =
+            new TestMessage(id_, id_ + 1, test_time_++, message_size_);
+        start_ = std::chrono::high_resolution_clock::now();
+      } else {
+        std::cerr << "压力发生器接收到错误的回射信息" << std::endl;
+        exit(-1);
+      }
     }
   }
+  return nrecv;
 }
-// 担任回射服务器
-void MyClient::EchoServer(int connected_socket) {
-  Buffer* buffer = new Buffer();
-  buffer->InitPtr();
-  ssize_t nrecv, nsend;
-  // 初始化报头，dst_id_为-1表示报头还没读到
-  Header header;
-  header.dst_id_ = -1;
-  int rest_data_len = 0;  // 还未分配缓冲区的报文长度
-  while (1) {
-    // 接收
-    if ((nrecv = recv(connected_socket, buffer->GetRecvStart(),
-                      buffer->GetRecvEnd() - buffer->GetRecvStart(),
+void PressureClient::SendData(int fd) {
+  // 发送
+  ssize_t nsend;
+  char* ptr_send_start_;
+  char* ptr_send_end_;
+  if (is_send_id_) {
+    // 已经发送完自己的id
+    ptr_send_start_ = test_message_->GetPtrSendStart();
+    ptr_send_end_ = test_message_->GetPtrSendEnd();
+  } else {
+    // 还没发送完自己的id
+    ptr_send_start_ = ptr_send_id_;
+    ptr_send_end_ = ptr_send_start_ + sizeof(id_);
+  }
+
+  if (ptr_send_end_ - ptr_send_start_ > 0) {
+    if ((nsend = send(fd, ptr_send_start_, ptr_send_end_ - ptr_send_start_,
                       MSG_NOSIGNAL)) < 0) {
       if (errno != EWOULDBLOCK) {
-        std::cerr << "回射服务器接收错误" << strerror(errno) << std::endl;
+        std::cerr << "压力发生器发送出错:" << strerror(errno) << std::endl;
       }
-    } else if (nrecv == 0) {
-      // 服务器断连了
-      std::cerr << "中继服务器与回射服务器断连" << std::endl;
-      return;
     } else {
-      buffer->MoveRecvStart(nrecv);
 #ifdef DEBUG
-      std::cerr << "回射服务器接收到 " << nrecv << " 字节" << std::endl;
+      std::cerr << "压力发生器发送" << nsend << std::endl;
 #endif
-      if (header.dst_id_ != -1) {
-        // 读取的是数据
-        buffer->UpdateSendEnd();
-      }
-      if (buffer->IsRecvFinish()) {
-        if (header.dst_id_ == -1) {
-          // 接收完报头
-          memcpy(&header, buffer->GetBuffer(), sizeof(Header));
-#ifdef DEBUG
-          std::cerr << "回射服务器收到了来自 " << header.src_id_
-                    << " 的消息，长度:" << header.data_len_ << std::endl;
-#endif
-          std::swap(header.dst_id_, header.src_id_);
-          memcpy(buffer->GetBuffer(), &header, sizeof(Header));
-          rest_data_len = header.data_len_;
-          // 开始回射
-          buffer->UpdateSendEnd();
-          // 开始接收数据
-          buffer->UpdateRecvEnd(rest_data_len);
-        } else if (rest_data_len) {
-          // 读数据导致缓冲区满
-
-#ifdef DEBUG
-          std::cerr << "回射服务器缓冲区已满" << std::endl;
-#endif
-          buffer->UpdateRecvEnd(rest_data_len);
+      if (is_send_id_) {
+        test_message_->MoveSendStart(nsend);
+      } else {
+        ptr_send_id_ += nsend;
+        if (ptr_send_id_ == reinterpret_cast<char*>(&id_) + sizeof(id_)) {
+          // 发送完id
+          is_send_id_ = true;
+          //  产生测试信息
+          test_message_ =
+              new TestMessage(id_, id_ + 1, test_time_++, message_size_);
+          start_ = std::chrono::high_resolution_clock::now();
         }
       }
     }
+  }
+}
 
-    // 发送
-    if (buffer->GetSendEnd() > buffer->GetSendStart()) {
-      if ((nsend = send(connected_socket, buffer->GetSendStart(),
-                        buffer->GetSendEnd() - buffer->GetSendStart(),
-                        MSG_NOSIGNAL)) < 0) {
-        if (errno != EWOULDBLOCK) {
-          std::cerr << "回射服务器发送出错" << strerror(errno) << std::endl;
-        }
-      } else {
+// EchoServerClient
+EchoServerClient::EchoServerClient(int serverport, const char* str_server_ip,
+                                   int id)
+    : Client(serverport, str_server_ip, id) {
+  buffer_ = new Buffer();
+  // 将id置于缓冲区中发送给服务器
+  memcpy(buffer_->GetBuffer(), &id_, sizeof(id));
+  ssize_t nrecv = sizeof(id);
+  buffer_->MoveRecvStart(nrecv);
+  buffer_->UpdateSendEnd();
+  rest_data_len_ = 0;
+  has_dst_ = -1;
+}
+ssize_t EchoServerClient::ReadData(int fd) {
+  ssize_t nrecv;
+  // 接收
+  if ((nrecv = recv(fd, buffer_->GetRecvStart(),
+                    buffer_->GetRecvEnd() - buffer_->GetRecvStart(),
+                    MSG_NOSIGNAL)) < 0) {
+    if (errno != EWOULDBLOCK) {
+      std::cerr << "回射服务器接收错误" << strerror(errno) << std::endl;
+    }
+  } else {
+    buffer_->MoveRecvStart(nrecv);
 #ifdef DEBUG
-        std::cerr << "回射服务器发送了 " << nsend << " 字节" << std::endl;
+    std::cerr << "回射服务器接收到 " << nrecv << " 字节" << std::endl;
 #endif
-        buffer->MoveSendStart(nsend);
-        // 接收数据受发送数据所限制
-        if (rest_data_len) {
-          buffer->UpdateRecvEnd(rest_data_len);
-        }
-        if (buffer->IsSendFinish()) {
+    if (has_dst_) {
+      // 读取的是数据
+      buffer_->UpdateSendEnd();
+    }
+    if (buffer_->IsRecvFinish()) {
+      if (!has_dst_) {
+        // 接收完报头
+        Header header;
+        memcpy(&header, buffer_->GetBuffer(), sizeof(Header));
 #ifdef DEBUG
-          std::cerr << "回射服务器发送完了" << std::endl;
+        std::cerr << "回射服务器收到了来自 " << header.src_id_
+                  << " 的消息，长度:" << header.data_len_ << std::endl;
 #endif
-          buffer->UpdateSendEnd();
-          if (buffer->IsSendFinish()) {
-            // 转发完成
+        std::swap(header.dst_id_, header.src_id_);
+        memcpy(buffer_->GetBuffer(), &header, sizeof(Header));
+        rest_data_len_ = header.data_len_;
+        has_dst_ = true;
+        // 开始回射
+        buffer_->UpdateSendEnd();
+        // 开始接收数据
+        buffer_->UpdateRecvEnd(rest_data_len_);
+      } else if (rest_data_len_) {
+        // 读数据导致缓冲区满
+
 #ifdef DEBUG
-            std::cerr << header.dst_id_ << " 的消息回射完了" << std::endl;
+        std::cerr << "回射服务器缓冲区已满" << std::endl;
 #endif
-            header.dst_id_ = -1;
-            buffer->InitPtr();
-          }
+        buffer_->UpdateRecvEnd(rest_data_len_);
+      }
+    }
+  }
+  return nrecv;
+}
+void EchoServerClient::SendData(int fd) {
+  ssize_t nsend;
+  if (buffer_->GetSendEnd() > buffer_->GetSendStart()) {
+    if ((nsend = send(fd, buffer_->GetSendStart(),
+                      buffer_->GetSendEnd() - buffer_->GetSendStart(),
+                      MSG_NOSIGNAL)) < 0) {
+      if (errno != EWOULDBLOCK) {
+        std::cerr << "回射服务器发送出错" << strerror(errno) << std::endl;
+      }
+    } else {
+#ifdef DEBUG
+      std::cerr << "回射服务器发送了 " << nsend << " 字节" << std::endl;
+#endif
+      buffer_->MoveSendStart(nsend);
+      // 接收数据受发送数据所限制
+      if (rest_data_len_) {
+        buffer_->UpdateRecvEnd(rest_data_len_);
+      }
+      if (buffer_->IsSendFinish()) {
+#ifdef DEBUG
+        std::cerr << "回射服务器发送完了" << std::endl;
+#endif
+        buffer_->UpdateSendEnd();
+        if (buffer_->IsSendFinish()) {
+          // 转发完成
+#ifdef DEBUG
+          std::cerr << id_ - 1 << "消息回射完了" << std::endl;
+#endif
+          has_dst_ = false;
+          buffer_->InitPtr();
         }
       }
     }
