@@ -44,9 +44,6 @@ class Buffer {
   // 更新ptr_recv_end
   void UpdateRecvEnd(int &rest_size);
 
-  // 设置ptr_recv_end
-  void SetRecvEnd(ssize_t &size) { ptr_recv_end_ = buf_ + size; }
-
  private:
   char *buf_;                   // 暂存数据缓冲区
   static ssize_t buffer_size_;  // 暂存数据缓冲区的大小

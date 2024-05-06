@@ -38,7 +38,7 @@ class PressureClient : public Client {
   ssize_t ReadData(int fd) override;
   void SendData(int fd) override;
 
- protected:
+ private:
   int message_size_;
   TestMessage* test_message_;  // 测试报文
   int test_time_;              // 测试次数
