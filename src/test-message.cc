@@ -38,6 +38,12 @@ TestMessage::TestMessage(int src_id, int dst_id, int test_id,
 }
 
 TestMessage::~TestMessage() {
-  delete origin_message_;
-  delete back_message_;
+  if (origin_message_ != nullptr) {
+    delete origin_message_;
+    origin_message_ = nullptr;
+  }
+  if (back_message_ != nullptr) {
+    delete back_message_;
+    back_message_ = nullptr;
+  }
 }

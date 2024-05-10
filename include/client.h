@@ -21,6 +21,8 @@ class Client {
   int Run();
   virtual ssize_t ReadData(int fd) = 0;
   virtual void SendData(int fd) = 0;
+  void SetConnected(int& fd);
+  bool IsConnected() { return is_connected_; }
 
  protected:
   int serverport_;
@@ -28,6 +30,7 @@ class Client {
   int id_;
   bool is_send_id_;    // 是否发送过id
   char* ptr_send_id_;  // 非阻塞发送id的起始指针
+  bool is_connected_ = false;
 };
 
 class PressureClient : public Client {

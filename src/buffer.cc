@@ -44,7 +44,7 @@ void Buffer::InitPtr(bool is_first) {
 bool Buffer::IsRecvFinish() { return ptr_recv_start_ == ptr_recv_end_; }
 
 // 是否发送完指定数据
-bool Buffer::IsSendFinish() { return ptr_send_start_ == ptr_recv_end_; }
+bool Buffer::IsSendFinish() { return ptr_send_start_ == ptr_send_end_; }
 
 // 更新ptr_recv_end
 void Buffer::UpdateRecvEnd(int& rest_size) {
@@ -71,7 +71,7 @@ void Buffer::UpdateRecvEnd(int& rest_size) {
 
 // 更新ptr_send_end
 void Buffer::UpdateSendEnd() {
-  if (ptr_send_end_ < ptr_recv_start_) {
+  if (ptr_send_end_ <= ptr_recv_start_) {
     ptr_send_end_ = ptr_recv_start_;
   } else if (ptr_send_start_ == buf_ + buffer_size_) {
     // 两个指针均到达缓冲区末端

@@ -114,7 +114,7 @@ void ClientConnected::SendData() {
         }
         if (src_buffer->IsSendFinish()) {
           src_buffer->UpdateSendEnd();
-          if (src_buffer->IsSendFinish()) {
+          if (src_buffer->IsSendFinish() && src_buffer->IsRecvFinish()) {
             // 转发完成
 
 #ifdef DEBUG

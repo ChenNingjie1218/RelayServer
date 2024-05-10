@@ -28,9 +28,15 @@ int main(int argc, char** argv) {
   }
   signal(SIGINT, signalHandler);
   int num_sessions = atoi(argv[1]);
-  const int message_size = atoi(argv[2]);
-  std::cout << "产生会话数为：" << num_sessions << ", 报文大小为："
-            << message_size << "B" << std::endl;
+  const int message_size = atoll(argv[2]);
+  // const int message_size = atoll(argv[2]) * 1024;
+  std::cout << "产生会话数为：" << num_sessions << ", 报文大小为：";
+  if (message_size >= 1024) {
+    std::cout << atoi(argv[2]) << "KB" << std::endl;
+  } else {
+    std::cout << message_size << "B" << std::endl;
+  }
+
   if (message_size > MAX_MESSAGE_LEN) {
     std::cerr << "报文大小太大，暂只支持" << MAX_MESSAGE_LEN / 1024 << "KB"
               << std::endl;
@@ -52,7 +58,8 @@ int main(int argc, char** argv) {
   for (int i = 0; i < num_sessions; ++i) {
     // ---- 压力发生客户端 ----
     PressureClient* onePressureClient =
-        new PressureClient(5000, "116.205.224.19", 2 * i, message_size, -1);
+        // new PressureClient(5000, "116.205.224.19", 2 * i, message_size, -1);
+        new PressureClient(5000, "127.0.0.1", 2 * i, message_size, -1);
 
     // 将新的连接套接字添加到 epoll 实例中
     int Pressure_fd = onePressureClient->Run();
@@ -66,7 +73,8 @@ int main(int argc, char** argv) {
 
     // ---- 回射客户端 ----
     EchoServerClient* oneEchoServerClient =
-        new EchoServerClient(5000, "116.205.224.19", 2 * i + 1);
+        // new EchoServerClient(5000, "116.205.224.19", 2 * i + 1);
+        new EchoServerClient(5000, "127.0.0.1", 2 * i + 1);
     // 将新的连接套接字添加到 epoll 实例中
     int EchoServer_fd = oneEchoServerClient->Run();
     event.events = EPOLLIN | EPOLLOUT;  // 监听可读可写事件，水平触发模式
@@ -78,6 +86,8 @@ int main(int argc, char** argv) {
     fd_to_client[EchoServer_fd] = oneEchoServerClient;
   }
 
+  std::cerr << "所有客户端连接成功" << std::endl;
+  int n_client = 2 * num_sessions;
   // 创建事件数组用于存储触发的事件
   epoll_event events[MAX_EVENTS];
   while (1) {
@@ -106,6 +116,10 @@ int main(int argc, char** argv) {
             exit(-1);
           }
           delete client;
+          --n_client;
+          if (n_client == 0) {
+            std::cerr << "所有客户端断连" << std::endl;
+          }
           fd_to_client[connected_socket] = nullptr;
           close(connected_socket);
           continue;

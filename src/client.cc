@@ -58,24 +58,49 @@ int Client::Run() {
   }
   server_address.sin_port = htons(serverport_);
 
+  // 将套接字设置为非阻塞模式
+  // int val = fcntl(client_socket, F_GETFL);
+  // if (fcntl(client_socket, F_SETFL, val | O_NONBLOCK) == -1) {
+  //   std::cerr << "Failed to set client socket to non-blocking mode."
+  //             << std::endl;
+  //   exit(-1);
+  // }
+
   //连接到服务器
-  if (connect(client_socket, (sockaddr*)&server_address,
-              sizeof(server_address)) == -1) {
-    std::cerr << "连接失败：" << strerror(errno) << std::endl;
-    close(client_socket);
-    exit(-1);
-  }
+  int connectResult;
+  if ((connectResult = connect(client_socket, (sockaddr*)&server_address,
+                               sizeof(server_address))) <= 0) {
+    if (connectResult == 0) {
 #ifdef DEBUG
-  std::cerr << "连接服务器成功" << std::endl;
+      std::cerr << "连接服务器成功" << std::endl;
 #endif
+      SetConnected(connectResult);
+    } else if (errno != EINPROGRESS) {
+      std::cerr << "连接失败：" << strerror(errno) << std::endl;
+      close(client_socket);
+      exit(-1);
+    }
+  }
+
   // 将连接套接字设置为非阻塞模式
-  int val = fcntl(client_socket, F_GETFL);
-  if (fcntl(client_socket, F_SETFL, val | O_NONBLOCK) == -1) {
+  // int val = fcntl(client_socket, F_GETFL);
+  // if (fcntl(client_socket, F_SETFL, val | O_NONBLOCK) == -1) {
+  //   std::cerr << "Failed to set client socket to non-blocking mode."
+  //             << std::endl;
+  //   exit(-1);
+  // }
+  return client_socket;
+}
+
+void Client::SetConnected(int& fd) {
+  is_connected_ = true;
+  // 将连接套接字设置为非阻塞模式
+  int val = fcntl(fd, F_GETFL);
+  if (fcntl(fd, F_SETFL, val | O_NONBLOCK) == -1) {
     std::cerr << "Failed to set client socket to non-blocking mode."
               << std::endl;
     exit(-1);
   }
-  return client_socket;
 }
 
 // PressureClient
@@ -129,8 +154,14 @@ ssize_t PressureClient::ReadData(int fd) {
         duration += end - start_;
         // std::chrono::duration_cast<std::chrono::milliseconds>(end - start_);
         //  重置测试信息
-        delete test_message_;
+        if (test_message_ != nullptr) {
+          delete test_message_;
+          test_message_ = nullptr;
+        }
         if (max_test_time_ != -1 && test_time_ >= max_test_time_) {
+#ifdef DEBUG
+          std::cerr << id_ << "到达最大测试次数" << std::endl;
+#endif
           return 0;
         }
         test_message_ =
@@ -276,7 +307,7 @@ void EchoServerClient::SendData(int fd) {
         std::cerr << "回射服务器发送完了" << std::endl;
 #endif
         buffer_->UpdateSendEnd();
-        if (buffer_->IsSendFinish()) {
+        if (buffer_->IsSendFinish() && buffer_->IsRecvFinish()) {
           // 转发完成
 #ifdef DEBUG
           std::cerr << id_ - 1 << "消息回射完了" << std::endl;
