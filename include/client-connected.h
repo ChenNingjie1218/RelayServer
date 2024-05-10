@@ -32,7 +32,7 @@ class ClientConnected {
   void ResetDstClient();
 
   // 获取还未接收的剩余数据长度
-  int GetRestDataLen() { return rest_data_len_; }
+  int& GetRestDataLen() { return rest_data_len_; }
 
   // 获取目的客户端的id
   int GetDstId() { return dst_id_; }

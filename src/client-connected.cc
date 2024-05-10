@@ -77,10 +77,10 @@ ssize_t ClientConnected::RecvData(
                   << std::endl;
 #endif
       } else if (rest_data_len_) {
-        // 读数据导致缓冲区满，还有剩余数据没读完
+        // 读数据至上限，还有剩余数据没读完
 
 #ifdef DEBUG
-        std::cerr << "读数据导致缓冲区满，还有剩余数据没读完" << std::endl;
+        std::cerr << "读数据至上限，还有剩余数据没读完" << std::endl;
 #endif
         buffer_->UpdateRecvEnd(rest_data_len_);
       }
@@ -108,7 +108,7 @@ void ClientConnected::SendData() {
 #endif
         src_buffer->MoveSendStart(nsend);
         // 源端接收数据受该端发送数据所限制
-        int rest_data_len = src_client_->GetRestDataLen();
+        int& rest_data_len = src_client_->GetRestDataLen();
         if (rest_data_len) {
           src_buffer->UpdateRecvEnd(rest_data_len);
         }
