@@ -22,9 +22,9 @@ TestMessage::TestMessage(int src_id, int dst_id, int test_id,
   strncpy(origin_message_->data, ss.str().c_str(),
           origin_message_->header.data_len_);
 #ifdef DEBUG
-  std::cerr << "测试数据长度:" << origin_message_->header.data_len_
-            << std::endl;
-  std::cerr << "测试数据:" << origin_message_->data << std::endl;
+  // std::cerr << "测试数据长度:" << origin_message_->header.data_len_
+  //           << std::endl;
+  // std::cerr << "测试数据:" << origin_message_->data << std::endl;
 #endif
 
   ptr_send_start_ = reinterpret_cast<char*>(origin_message_);
