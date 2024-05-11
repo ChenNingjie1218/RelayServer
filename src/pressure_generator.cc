@@ -27,12 +27,12 @@ void CreateClient(int thread_id, int num_sessions, int epoll_fd,
   }
   int max_sessions = std::min(per_sessions * (thread_id + 1), num_sessions);
   for (int i = thread_id * per_sessions; i < max_sessions; ++i) {
-    int test_time = 10 + 40.0 * rand() / RAND_MAX;
-    // int test_time = -1;
+    // int test_time = 10 + 40.0 * rand() / RAND_MAX;
+    int test_time = -1;
     // std::cerr << "测试次数:" << test_time << std::endl;
     // ---- 压力发生客户端 ----
     PressureClient* onePressureClient = new PressureClient(
-        5000, "116.205.224.19", 2 * i + 20000, message_size, test_time);
+        5000, "116.205.224.19", 2 * i, message_size, test_time);
     // new PressureClient(5000, "127.0.0.1", 2 * i, message_size, -1);
 
     // 将新的连接套接字添加到 epoll 实例中
@@ -47,7 +47,7 @@ void CreateClient(int thread_id, int num_sessions, int epoll_fd,
 
     // ---- 回射客户端 ----
     EchoServerClient* oneEchoServerClient =
-        new EchoServerClient(5000, "116.205.224.19", 2 * i + 1 + 20000);
+        new EchoServerClient(5000, "116.205.224.19", 2 * i + 1);
     // new EchoServerClient(5000, "127.0.0.1", 2 * i + 1);
     // 将新的连接套接字添加到 epoll 实例中
     int EchoServer_fd = oneEchoServerClient->Run();
