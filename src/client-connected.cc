@@ -15,7 +15,12 @@ ClientConnected::ClientConnected(int& fd)
     : id_(-1), fd_(fd), dst_id_(-1), src_client_(nullptr), rest_data_len_(0) {
   buffer_ = new Buffer();
 }
-ClientConnected::~ClientConnected() { delete buffer_; }
+ClientConnected::~ClientConnected() {
+  if (buffer_ != nullptr) {
+    delete buffer_;
+    buffer_ = nullptr;
+  }
+}
 
 // 从该客户端接收数据
 ssize_t ClientConnected::RecvData(

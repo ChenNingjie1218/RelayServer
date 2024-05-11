@@ -30,7 +30,7 @@ Server::Server(int port, int length_of_queue_of_listen,
 
 // 析构函数
 Server::~Server() {
-  if (str_bound_ip_) {
+  if (str_bound_ip_ != nullptr) {
     delete[] str_bound_ip_;
     str_bound_ip_ = nullptr;
   }
@@ -213,7 +213,10 @@ void RelayServer::ServerFunction(int &listen_socket) {
               }
               id_to_client_.erase(ptr_client->GetId());
             }
-            delete ptr_client;
+            if (ptr_client != nullptr) {
+              delete ptr_client;
+              ptr_client = nullptr;
+            }
             continue;
           }
         }

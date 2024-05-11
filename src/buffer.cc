@@ -4,7 +4,7 @@
 
 #include "message.h"
 #include "param.h"
-ssize_t Buffer::buffer_size_ = 4 * 1024;  // 暂存数据缓冲区的大小
+ssize_t Buffer::buffer_size_ = 16 * 1024;  // 暂存数据缓冲区的大小
 
 Buffer::Buffer() {
   if (sizeof(Header) > buffer_size_) {
@@ -16,7 +16,12 @@ Buffer::Buffer() {
   InitPtr(true);
 }
 
-Buffer::~Buffer() { delete[] buf_; }
+Buffer::~Buffer() {
+  if (buf_ != nullptr) {
+    delete[] buf_;
+    buf_ = nullptr;
+  }
+}
 
 // 初始化指针 等待读取Header的状态
 void Buffer::InitPtr(bool is_first) {

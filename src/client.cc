@@ -34,7 +34,7 @@ Client::Client(int serverport, const char* str_server_ip, int id)
 
 // 析构函数
 Client::~Client() {
-  if (str_server_ip_) {
+  if (str_server_ip_ != nullptr) {
     delete[] str_server_ip_;
     str_server_ip_ = nullptr;
   }
@@ -114,7 +114,7 @@ PressureClient::PressureClient(int serverport, const char* str_server_ip,
   test_time_ = 1;
 }
 PressureClient::~PressureClient() {
-  if (test_message_) {
+  if (test_message_ != nullptr) {
     delete test_message_;
     test_message_ = nullptr;
   }
@@ -273,10 +273,10 @@ ssize_t EchoServerClient::ReadData(int fd) {
         // 开始接收数据
         buffer_->UpdateRecvEnd(rest_data_len_);
       } else if (rest_data_len_) {
-        // 读数据导致缓冲区满
+        // 读数据至上限，还有剩余数据没读完
 
 #ifdef DEBUG
-        std::cerr << "回射服务器缓冲区已满" << std::endl;
+        std::cerr << "回射服务器读数据至上限，还有剩余数据没读完" << std::endl;
 #endif
         buffer_->UpdateRecvEnd(rest_data_len_);
       }
