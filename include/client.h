@@ -20,7 +20,7 @@ class Client {
   virtual ~Client();
   int Run();
   virtual ssize_t ReadData(int fd) = 0;
-  virtual void SendData(int fd) = 0;
+  virtual bool SendData(int fd) = 0;
   void SetConnected(int& fd);
   bool IsConnected() { return is_connected_; }
 
@@ -39,7 +39,7 @@ class PressureClient : public Client {
                  int message_size, int max_test_time);
   ~PressureClient();
   ssize_t ReadData(int fd) override;
-  void SendData(int fd) override;
+  bool SendData(int fd) override;
 
  private:
   int message_size_;
@@ -54,7 +54,7 @@ class EchoServerClient : public Client {
   EchoServerClient(int serverport, const char* str_server_ip, int id);
   ~EchoServerClient();
   ssize_t ReadData(int fd) override;
-  void SendData(int fd) override;
+  bool SendData(int fd) override;
 
  private:
   Buffer* buffer_;     // 缓冲区

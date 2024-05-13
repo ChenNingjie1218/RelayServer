@@ -175,7 +175,7 @@ ssize_t PressureClient::ReadData(int fd) {
   }
   return nrecv;
 }
-void PressureClient::SendData(int fd) {
+bool PressureClient::SendData(int fd) {
   // 发送
   ssize_t nsend;
   char* ptr_send_start_;
@@ -215,6 +215,7 @@ void PressureClient::SendData(int fd) {
       }
     }
   }
+  return true;  // 压力发生端用不到该值
 }
 
 // EchoServerClient
@@ -284,7 +285,7 @@ ssize_t EchoServerClient::ReadData(int fd) {
   }
   return nrecv;
 }
-void EchoServerClient::SendData(int fd) {
+bool EchoServerClient::SendData(int fd) {
   ssize_t nsend;
   if (buffer_->GetSendEnd() > buffer_->GetSendStart()) {
     if ((nsend = send(fd, buffer_->GetSendStart(),
@@ -317,5 +318,7 @@ void EchoServerClient::SendData(int fd) {
         }
       }
     }
+    return buffer_->IsSendFinish();
   }
+  return false;
 }
