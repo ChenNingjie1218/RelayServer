@@ -39,6 +39,10 @@ class RelayServer : public Server {
  protected:
   // 转发功能
   void ServerFunction(int &listen_socket) override;
+  // 接收客户端连接
+  void AcceptClient(int listen_socket, int io_epoll_fd);
+  // IO操作
+  void IOOperation(int io_epoll_fd);
 
   std::mutex accept_mutex_;  // accept的锁
   ClientConnected

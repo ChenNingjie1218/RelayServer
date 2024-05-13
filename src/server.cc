@@ -10,6 +10,7 @@
 
 #include <cerrno>
 #include <iostream>
+#include <thread>
 
 #include "client-connected.h"
 #include "param.h"
@@ -97,6 +98,21 @@ RelayServer::RelayServer(int port, int length_of_queue_of_listen,
     : Server(port, length_of_queue_of_listen, str_bound_ip) {}
 
 void RelayServer::ServerFunction(int &listen_socket) {
+  // 创建 io epoll 实例
+  int epoll_fd = epoll_create1(0);
+  if (epoll_fd == -1) {
+    std::cerr << "Failed to create epoll instance." << std::endl;
+    exit(-1);
+  }
+  std::thread accept_client_thread(&RelayServer::AcceptClient, this,
+                                   listen_socket, epoll_fd);
+  std::thread io_thread(&RelayServer::IOOperation, this, epoll_fd);
+  accept_client_thread.join();
+  io_thread.join();
+}
+
+// 接收客户端连接
+void RelayServer::AcceptClient(int listen_socket, int io_epoll_fd) {
   // 创建 epoll 实例
   int epoll_fd = epoll_create1(0);
   if (epoll_fd == -1) {
@@ -165,68 +181,111 @@ void RelayServer::ServerFunction(int &listen_socket) {
           exit(-1);
         }
 
-        // 将新的连接套接字添加到 epoll 实例中
-        event.events = EPOLLIN | EPOLLOUT;  // 监听可读可写事件，水平触发模式
+        // 将新的连接套接字添加到 io epoll 实例中
+        event.events = EPOLLIN;  // 监听可读事件，水平触发模式
         event.data.fd = client_socket;
 
-        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_socket, &event) == -1) {
+        if (epoll_ctl(io_epoll_fd, EPOLL_CTL_ADD, client_socket, &event) ==
+            -1) {
           std::cerr << "Failed to add client socket to epoll." << std::endl;
           exit(-1);
-        }
-      } else {
-        int client_socket = events[i].data.fd;
-        // 当前客户端对象指针
-        ClientConnected *ptr_client = fd_to_client_[client_socket];
-        if (ptr_client == nullptr) {
-          std::cerr << "该客户端已经断连" << std::endl;
-          exit(-1);
-        }
-        if (events[i].events & EPOLLIN) {
-          // 可读事件
-
-          ssize_t nrecv = ptr_client->RecvData(id_to_client_);
-          if (nrecv == 0) {
-            // 断开连接
-            if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_socket, nullptr) ==
-                -1) {
-              std::cerr << "Failed to remove client socket from epoll."
-                        << std::endl;
-              exit(-1);
-            }
-
-            fd_to_client_[client_socket] = nullptr;
-            close(client_socket);
-            if (ptr_client->GetId() != -1) {
-              // 如果已经登记了id，更新id_to_client_映射
-
-#ifdef DEBUG
-              std::cerr << "服务器与id为 " << ptr_client->GetId()
-                        << " 的客户端断开连接" << std::endl;
-#endif
-              // todo: 断线重连的话这个要保留
-              if (ptr_client->GetDstId() != -1 &&
-                  id_to_client_.find(ptr_client->GetDstId()) !=
-                      id_to_client_.end()) {
-                // 有目的客户端 需要目的客户端将源客户端置空
-                // 防止再从该客户端读取数据
-                id_to_client_[ptr_client->GetDstId()]->SetSrcClient(nullptr);
-              }
-              id_to_client_.erase(ptr_client->GetId());
-            }
-            if (ptr_client != nullptr) {
-              delete ptr_client;
-              ptr_client = nullptr;
-            }
-            continue;
-          }
-        }
-        if (events[i].events & EPOLLOUT) {
-          // 可写事件
-
-          ptr_client->SendData();
         }
       }
     }
   }
   close(epoll_fd);
+}
+// IO操作
+void RelayServer::IOOperation(int io_epoll_fd) {
+  // 创建事件数组用于存储触发的事件
+  epoll_event events[MAX_EVENTS];
+  while (1) {
+    // 等待事件触发
+    int num_events = epoll_wait(io_epoll_fd, events, MAX_EVENTS, -1);
+    if (num_events == -1) {
+      std::cerr << "Failed to wait for events." << std::endl;
+      exit(-1);
+    }
+
+    // std::cerr << "num_events:" << num_events << std::endl;
+
+    for (int i = 0; i < num_events; ++i) {
+      int client_socket = events[i].data.fd;
+      // 当前客户端对象指针
+      ClientConnected *ptr_client = fd_to_client_[client_socket];
+      if (ptr_client == nullptr) {
+        std::cerr << "该客户端已经断连" << std::endl;
+        exit(-1);
+      }
+      if (events[i].events & EPOLLIN) {
+        // 可读事件
+
+        ssize_t nrecv = ptr_client->RecvData(id_to_client_);
+        if (nrecv > 0) {
+          if (id_to_client_.find(ptr_client->GetDstId()) !=
+              id_to_client_.end()) {
+            // 添加可写监听
+            epoll_event event{};
+            event.events = EPOLLIN | EPOLLOUT;  // 监听可读事件,水平触发
+            event.data.fd = id_to_client_[ptr_client->GetDstId()]->GetFd();
+            if (epoll_ctl(io_epoll_fd, EPOLL_CTL_MOD, event.data.fd, &event) ==
+                -1) {
+              std::cerr << "Failed to change epoll mod." << std::endl;
+              exit(-1);
+            }
+          }
+        }
+        if (nrecv == 0) {
+          // 断开连接
+          if (epoll_ctl(io_epoll_fd, EPOLL_CTL_DEL, client_socket, nullptr) ==
+              -1) {
+            std::cerr << "Failed to remove client socket from epoll."
+                      << std::endl;
+            exit(-1);
+          }
+
+          fd_to_client_[client_socket] = nullptr;
+          close(client_socket);
+          if (ptr_client->GetId() != -1) {
+            // 如果已经登记了id，更新id_to_client_映射
+
+#ifdef DEBUG
+            std::cerr << "服务器与id为 " << ptr_client->GetId()
+                      << " 的客户端断开连接" << std::endl;
+#endif
+            // todo: 断线重连的话这个要保留
+            if (ptr_client->GetDstId() != -1 &&
+                id_to_client_.find(ptr_client->GetDstId()) !=
+                    id_to_client_.end()) {
+              // 有目的客户端 需要目的客户端将源客户端置空
+              // 防止再从该客户端读取数据
+              id_to_client_[ptr_client->GetDstId()]->SetSrcClient(nullptr);
+            }
+            id_to_client_.erase(ptr_client->GetId());
+          }
+          if (ptr_client != nullptr) {
+            delete ptr_client;
+            ptr_client = nullptr;
+          }
+          continue;
+        }
+      }
+      if (events[i].events & EPOLLOUT) {
+        // 可写事件
+
+        if (ptr_client->SendData()) {
+          // 删除可写监听
+          epoll_event event{};
+          event.events = EPOLLIN;  // 监听可读事件,水平触发
+          event.data.fd = client_socket;
+          if (epoll_ctl(io_epoll_fd, EPOLL_CTL_MOD, client_socket, &event) ==
+              -1) {
+            std::cerr << "Failed to change epoll mod." << std::endl;
+            exit(-1);
+          }
+        }
+      }
+    }
+  }
+  close(io_epoll_fd);
 }

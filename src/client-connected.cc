@@ -95,7 +95,7 @@ ssize_t ClientConnected::RecvData(
 }
 
 // 向该客户端发送数据
-void ClientConnected::SendData() {
+bool ClientConnected::SendData() {
   if (src_client_ != nullptr) {
     // 源端在线 从源端的缓冲区读取数据
     ssize_t nsend;
@@ -133,7 +133,9 @@ void ClientConnected::SendData() {
         }
       }
     }
+    return src_buffer->IsSendFinish();
   }
+  return false;
 }
 
 // 重置目的客户端

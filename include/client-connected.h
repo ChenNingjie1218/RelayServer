@@ -22,8 +22,11 @@ class ClientConnected {
   // 从该客户端接收数据
   ssize_t RecvData(std::map<int, ClientConnected*>& id_to_client);
 
-  // 向该客户端发送数据
-  void SendData();
+  /*
+   * 向该客户端发送数据
+   * @ret 是否将可发送数据全部发送完
+   */
+  bool SendData();
 
   // 获取缓冲区
   Buffer* GetBuffer() { return buffer_; }
@@ -36,6 +39,9 @@ class ClientConnected {
 
   // 获取目的客户端的id
   int GetDstId() { return dst_id_; }
+
+  // 获取fd
+  int GetFd() { return fd_; }
 
  private:
   int id_;                       // 该客户端的id
