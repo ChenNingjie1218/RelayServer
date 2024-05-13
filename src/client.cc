@@ -243,47 +243,50 @@ EchoServerClient::~EchoServerClient() {
   }
 }
 ssize_t EchoServerClient::ReadData(int fd) {
-  ssize_t nrecv;
+  ssize_t nrecv = -1;
   // 接收
-  if ((nrecv = recv(fd, buffer_->GetRecvStart(),
-                    buffer_->GetRecvEnd() - buffer_->GetRecvStart(),
-                    MSG_NOSIGNAL)) < 0) {
-    if (errno != EWOULDBLOCK) {
-      std::cerr << "回射服务器接收错误" << strerror(errno) << std::endl;
-    }
-  } else {
-    buffer_->MoveRecvStart(nrecv);
+  if (buffer_->GetRecvEnd() > buffer_->GetRecvStart()) {
+    if ((nrecv = recv(fd, buffer_->GetRecvStart(),
+                      buffer_->GetRecvEnd() - buffer_->GetRecvStart(),
+                      MSG_NOSIGNAL)) < 0) {
+      if (errno != EWOULDBLOCK) {
+        std::cerr << "回射服务器接收错误" << strerror(errno) << std::endl;
+      }
+    } else {
+      buffer_->MoveRecvStart(nrecv);
 #ifdef DEBUG
-    std::cerr << "回射服务器接收到 " << nrecv << " 字节" << std::endl;
+      std::cerr << "回射服务器接收到 " << nrecv << " 字节" << std::endl;
 #endif
-    if (has_dst_) {
-      // 读取的是数据
-      buffer_->UpdateSendEnd();
-    }
-    if (buffer_->IsRecvFinish()) {
-      if (!has_dst_) {
-        // 接收完报头
-        Header header;
-        memcpy(&header, buffer_->GetBuffer(), sizeof(Header));
-#ifdef DEBUG
-        std::cerr << "回射服务器收到了来自 " << header.src_id_
-                  << " 的消息，长度:" << header.data_len_ << std::endl;
-#endif
-        std::swap(header.dst_id_, header.src_id_);
-        memcpy(buffer_->GetBuffer(), &header, sizeof(Header));
-        rest_data_len_ = header.data_len_;
-        has_dst_ = true;
-        // 开始回射
+      if (has_dst_) {
+        // 读取的是数据
         buffer_->UpdateSendEnd();
-        // 开始接收数据
-        buffer_->UpdateRecvEnd(rest_data_len_);
-      } else if (rest_data_len_) {
-        // 读数据至上限，还有剩余数据没读完
+      }
+      if (buffer_->IsRecvFinish()) {
+        if (!has_dst_) {
+          // 接收完报头
+          Header header;
+          memcpy(&header, buffer_->GetBuffer(), sizeof(Header));
+#ifdef DEBUG
+          std::cerr << "回射服务器收到了来自 " << header.src_id_
+                    << " 的消息，长度:" << header.data_len_ << std::endl;
+#endif
+          std::swap(header.dst_id_, header.src_id_);
+          memcpy(buffer_->GetBuffer(), &header, sizeof(Header));
+          rest_data_len_ = header.data_len_;
+          has_dst_ = true;
+          // 开始回射
+          buffer_->UpdateSendEnd();
+          // 开始接收数据
+          buffer_->UpdateRecvEnd(rest_data_len_);
+        } else if (rest_data_len_) {
+          // 读数据至上限，还有剩余数据没读完
 
 #ifdef DEBUG
-        std::cerr << "回射服务器读数据至上限，还有剩余数据没读完" << std::endl;
+          std::cerr << "回射服务器读数据至上限，还有剩余数据没读完"
+                    << std::endl;
 #endif
-        buffer_->UpdateRecvEnd(rest_data_len_);
+          buffer_->UpdateRecvEnd(rest_data_len_);
+        }
       }
     }
   }
