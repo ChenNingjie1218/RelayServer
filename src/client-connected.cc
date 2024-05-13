@@ -25,74 +25,76 @@ ClientConnected::~ClientConnected() {
 // 从该客户端接收数据
 ssize_t ClientConnected::RecvData(
     std::map<int, ClientConnected*>& id_to_client) {
-  ssize_t nrecv;
-  if ((nrecv = recv(fd_, buffer_->GetRecvStart(),
-                    buffer_->GetRecvEnd() - buffer_->GetRecvStart(),
-                    MSG_NOSIGNAL))  // MSG_NOSIGNAL 防止SIGPIP终止应用程序
-      < 0) {
-    if (errno != EWOULDBLOCK) {
-      std::cerr << "接收错误:" << strerror(errno) << std::endl;
-    }
-  } else if (nrecv > 0) {
+  ssize_t nrecv = -1;
+  if (buffer_->GetRecvEnd() > buffer_->GetRecvStart()) {
+    if ((nrecv = recv(fd_, buffer_->GetRecvStart(),
+                      buffer_->GetRecvEnd() - buffer_->GetRecvStart(),
+                      MSG_NOSIGNAL))  // MSG_NOSIGNAL 防止SIGPIP终止应用程序
+        < 0) {
+      if (errno != EWOULDBLOCK) {
+        std::cerr << "接收错误:" << strerror(errno) << std::endl;
+      }
+    } else if (nrecv > 0) {
 #ifdef DEBUG
-    std::cerr << "服务器接收到" << nrecv << "字节数据" << std::endl;
+      std::cerr << "服务器接收到" << nrecv << "字节数据" << std::endl;
 #endif
-    buffer_->MoveRecvStart(nrecv);
-    if (dst_id_ != -1) {
-      // 读取的是数据
-      buffer_->UpdateSendEnd();
-    }
-    if (buffer_->IsRecvFinish()) {
-      if (id_ == -1) {
-        // 获取id
-        memcpy(&id_, buffer_->GetBuffer(), sizeof(int));
-        buffer_->InitPtr();
-#ifdef DEBUG
-        std::cerr << "服务器建立新连接，id为：" << id_ << std::endl;
-#endif
-        //  检查是否有对端客户端
-        for (auto connected_client_iter = id_to_client.begin();
-             connected_client_iter != id_to_client.end();
-             ++connected_client_iter) {
-          if (connected_client_iter->second->GetDstId() == id_) {
-            SetSrcClient(connected_client_iter->second);
-            break;
-          }
-        }
-        id_to_client[id_] = this;
-      } else if (dst_id_ == -1) {
-        // 读完报头
-        Header header;
-        memcpy(&header, buffer_->GetBuffer(), sizeof(Header));
-        if (header.src_id_ != id_) {
-          std::cerr << "报头信息错误,src_id:" << header.src_id_ << std::endl;
-          buffer_->InitPtr();
-          return nrecv;
-        }
-        dst_id_ = header.dst_id_;
-        rest_data_len_ = header.data_len_;
-        // 可以发送数据了
-        if (id_to_client.find(dst_id_) != id_to_client.end()) {
-          id_to_client[dst_id_]->SetSrcClient(this);
-        }
-        // 开始转发
+      buffer_->MoveRecvStart(nrecv);
+      if (dst_id_ != -1) {
+        // 读取的是数据
         buffer_->UpdateSendEnd();
+      }
+      if (buffer_->IsRecvFinish()) {
+        if (id_ == -1) {
+          // 获取id
+          memcpy(&id_, buffer_->GetBuffer(), sizeof(int));
+          buffer_->InitPtr();
+#ifdef DEBUG
+          std::cerr << "服务器建立新连接，id为：" << id_ << std::endl;
+#endif
+          //  检查是否有对端客户端
+          for (auto connected_client_iter = id_to_client.begin();
+               connected_client_iter != id_to_client.end();
+               ++connected_client_iter) {
+            if (connected_client_iter->second->GetDstId() == id_) {
+              SetSrcClient(connected_client_iter->second);
+              break;
+            }
+          }
+          id_to_client[id_] = this;
+        } else if (dst_id_ == -1) {
+          // 读完报头
+          Header header;
+          memcpy(&header, buffer_->GetBuffer(), sizeof(Header));
+          if (header.src_id_ != id_) {
+            std::cerr << "报头信息错误,src_id:" << header.src_id_ << std::endl;
+            buffer_->InitPtr();
+            return nrecv;
+          }
+          dst_id_ = header.dst_id_;
+          rest_data_len_ = header.data_len_;
+          // 可以发送数据了
+          if (id_to_client.find(dst_id_) != id_to_client.end()) {
+            id_to_client[dst_id_]->SetSrcClient(this);
+          }
+          // 开始转发
+          buffer_->UpdateSendEnd();
 
-        // 开始接收数据
-        buffer_->UpdateRecvEnd(rest_data_len_);
+          // 开始接收数据
+          buffer_->UpdateRecvEnd(rest_data_len_);
 
 #ifdef DEBUG
-        std::cerr << "服务器收到来自" << header.src_id_ << "发给"
-                  << header.dst_id_ << "的长为" << header.data_len_ << "信息"
-                  << std::endl;
+          std::cerr << "服务器收到来自" << header.src_id_ << "发给"
+                    << header.dst_id_ << "的长为" << header.data_len_ << "信息"
+                    << std::endl;
 #endif
-      } else if (rest_data_len_) {
-        // 读数据至上限，还有剩余数据没读完
+        } else if (rest_data_len_) {
+          // 读数据至上限，还有剩余数据没读完
 
 #ifdef DEBUG
-        std::cerr << "读数据至上限，还有剩余数据没读完" << std::endl;
+          std::cerr << "读数据至上限，还有剩余数据没读完" << std::endl;
 #endif
-        buffer_->UpdateRecvEnd(rest_data_len_);
+          buffer_->UpdateRecvEnd(rest_data_len_);
+        }
       }
     }
   }

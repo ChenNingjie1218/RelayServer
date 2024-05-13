@@ -80,6 +80,7 @@ void ThreadMain(int type, int* epoll_fd, int num_sessions,
       std::cerr << "Failed to wait for events." << std::endl;
       exit(-1);
     }
+    // std::cerr << "num_events: " << num_events << std::endl;
     for (int i = 0; i < num_events; ++i) {
       Client* client = fd_to_client[events[i].data.fd];
       if (client == nullptr) {
@@ -127,7 +128,7 @@ void ThreadMain(int type, int* epoll_fd, int num_sessions,
       if (events[i].events & EPOLLOUT) {
         // 可写事件
         if (client->SendData(connected_socket) &&
-            type) {  // type放在后面，压力发生端要执行SendData
+            type) {  // type写后面，为了让压力端发数据
           // 回射端写完了可写数据 关闭可写监听
           epoll_event event{};
           event.events = EPOLLIN;  // 监听可读事件,水平触发
@@ -179,7 +180,9 @@ int main(int argc, char** argv) {
 
   Client* fd_to_client[MAX_CLIENT_NUM] = {nullptr};
   std::vector<std::thread> v_thread;
-  for (int j = 0; j < THREAD_NUM; ++j) {
+  // 循环次数
+  int loop_num = std::min(THREAD_NUM, num_sessions);
+  for (int j = 0; j < loop_num; ++j) {
     v_thread.push_back(std::thread(CreateClient, j, num_sessions, epoll_fd,
                                    fd_to_client, message_size));
   }

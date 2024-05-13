@@ -233,6 +233,10 @@ void RelayServer::IOOperation(int io_epoll_fd) {
               std::cerr << "Failed to change epoll mod." << std::endl;
               exit(-1);
             }
+#ifdef DEBUG
+            std::cout << "Added epoll mod EPOLLOUT. id:"
+                      << ptr_client->GetDstId() << std::endl;
+#endif
           }
         }
         if (nrecv == 0) {
@@ -283,6 +287,10 @@ void RelayServer::IOOperation(int io_epoll_fd) {
             std::cerr << "Failed to change epoll mod." << std::endl;
             exit(-1);
           }
+#ifdef DEBUG
+          std::cout << "removed epoll mod EPOLLOUT. id:" << ptr_client->GetId()
+                    << std::endl;
+#endif
         }
       }
     }

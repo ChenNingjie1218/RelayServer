@@ -122,54 +122,56 @@ PressureClient::~PressureClient() {
 
 ssize_t PressureClient::ReadData(int fd) {
   // 接收
-  ssize_t nrecv;
+  ssize_t nrecv = -1;
   char* ptr_recv_start_ = test_message_->GetPtrRecvStart();
   char* ptr_recv_end_ = test_message_->GetPtrRecvEnd();
-  if ((nrecv = recv(fd, ptr_recv_start_, ptr_recv_end_ - ptr_recv_start_,
-                    MSG_NOSIGNAL)) < 0) {
-    if (errno != EWOULDBLOCK) {
-      std::cerr << "压力发生器接收出错:" << strerror(errno) << std::endl;
-    }
-  } else if (nrecv == 0) {
-    // 服务器断开连接
-    std::cerr << "中继服务器与压力发生器断连" << std::endl;
-  } else {
+  if (ptr_recv_end_ > ptr_recv_start_) {
+    if ((nrecv = recv(fd, ptr_recv_start_, ptr_recv_end_ - ptr_recv_start_,
+                      MSG_NOSIGNAL)) < 0) {
+      if (errno != EWOULDBLOCK) {
+        std::cerr << "压力发生器接收出错:" << strerror(errno) << std::endl;
+      }
+    } else if (nrecv == 0) {
+      // 服务器断开连接
+      std::cerr << "中继服务器与压力发生器断连" << std::endl;
+    } else {
 #ifdef DEBUG
-    std::cerr << "压力发生器接收" << nrecv << std::endl;
+      std::cerr << "压力发生器接收" << nrecv << std::endl;
 #endif
-    test_message_->MoveRecvStart(nrecv);
-    if (test_message_->GetPtrRecvStart() == ptr_recv_end_) {
-      if (test_message_->CheckMessage()) {
+      test_message_->MoveRecvStart(nrecv);
+      if (test_message_->GetPtrRecvStart() == ptr_recv_end_) {
+        if (test_message_->CheckMessage()) {
 #ifdef DEBUG
-        std::cerr << "压力发生器接收到正确的回射信息" << std::endl;
+          std::cerr << "压力发生器接收到正确的回射信息" << std::endl;
 #endif
-        // 计数
-        extern int count;
-        ++count;
+          // 计数
+          extern int count;
+          ++count;
 
-        // 计时
-        auto end = std::chrono::high_resolution_clock::now();
-        extern std::chrono::duration<double, std::milli> duration;
-        end = std::chrono::high_resolution_clock::now();
-        duration += end - start_;
-        // std::chrono::duration_cast<std::chrono::milliseconds>(end - start_);
-        //  重置测试信息
-        if (test_message_ != nullptr) {
-          delete test_message_;
-          test_message_ = nullptr;
-        }
-        if (max_test_time_ != -1 && test_time_ >= max_test_time_) {
+          // 计时
+          auto end = std::chrono::high_resolution_clock::now();
+          extern std::chrono::duration<double, std::milli> duration;
+          end = std::chrono::high_resolution_clock::now();
+          duration += end - start_;
+
+          //  重置测试信息
+          if (test_message_ != nullptr) {
+            delete test_message_;
+            test_message_ = nullptr;
+          }
+          if (max_test_time_ != -1 && test_time_ >= max_test_time_) {
 #ifdef DEBUG
-          std::cerr << id_ << "到达最大测试次数" << std::endl;
+            std::cerr << id_ << "到达最大测试次数" << std::endl;
 #endif
-          return 0;
+            return 0;
+          }
+          test_message_ =
+              new TestMessage(id_, id_ + 1, test_time_++, message_size_);
+          start_ = std::chrono::high_resolution_clock::now();
+        } else {
+          std::cerr << "压力发生器接收到错误的回射信息" << std::endl;
+          exit(-1);
         }
-        test_message_ =
-            new TestMessage(id_, id_ + 1, test_time_++, message_size_);
-        start_ = std::chrono::high_resolution_clock::now();
-      } else {
-        std::cerr << "压力发生器接收到错误的回射信息" << std::endl;
-        exit(-1);
       }
     }
   }
@@ -202,6 +204,8 @@ bool PressureClient::SendData(int fd) {
 #endif
       if (is_send_id_) {
         test_message_->MoveSendStart(nsend);
+        return test_message_->GetPtrSendEnd() ==
+               test_message_->GetPtrSendStart();
       } else {
         ptr_send_id_ += nsend;
         if (ptr_send_id_ == reinterpret_cast<char*>(&id_) + sizeof(id_)) {
@@ -215,7 +219,7 @@ bool PressureClient::SendData(int fd) {
       }
     }
   }
-  return true;  // 压力发生端用不到该值
+  return false;
 }
 
 // EchoServerClient
