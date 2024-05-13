@@ -64,6 +64,11 @@ ssize_t ClientConnected::RecvData(
         // 读完报头
         Header header;
         memcpy(&header, buffer_->GetBuffer(), sizeof(Header));
+        if (header.src_id_ != id_) {
+          std::cerr << "报头信息错误,src_id:" << header.src_id_ << std::endl;
+          buffer_->InitPtr();
+          return nrecv;
+        }
         dst_id_ = header.dst_id_;
         rest_data_len_ = header.data_len_;
         // 可以发送数据了
