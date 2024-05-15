@@ -23,6 +23,7 @@ class Client {
   virtual bool SendData(int fd) = 0;
   void SetConnected(int& fd);
   bool IsConnected() { return is_connected_; }
+  int GetId() { return id_; }
 
  protected:
   int serverport_;

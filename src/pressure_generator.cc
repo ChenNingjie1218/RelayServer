@@ -1,5 +1,6 @@
 #include <sys/epoll.h>
 
+#include <cerrno>
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
@@ -23,24 +24,32 @@ void CreateClient(int thread_id, int num_sessions, int* epoll_fd,
   // 客户端与服务器连接 并将其加入到epoll 实例中
   int per_sessions = num_sessions / THREAD_NUM;
   if (!per_sessions) {
-    per_sessions = num_sessions;
+    per_sessions = 1;
   }
   int max_sessions = per_sessions * (thread_id + 1);
-  if (thread_id == THREAD_NUM - 1) {
+  if (max_sessions < num_sessions && thread_id == THREAD_NUM - 1) {
     max_sessions = num_sessions;
   }
+  if (max_sessions > num_sessions) {
+    // 已经够了
+    return;
+  }
+  // std::cerr << "线程" << thread_id << "创建"
+  //           << 2 * (max_sessions - thread_id * per_sessions) << "个连接"
+  //           << std::endl;
   for (int i = thread_id * per_sessions; i < max_sessions; ++i) {
     // int test_time = 10 + 40.0 * rand() / RAND_MAX;
     int test_time = -1;
     // std::cerr << "测试次数:" << test_time << std::endl;
     // ---- 压力发生客户端 ----
     PressureClient* onePressureClient = new PressureClient(
-        5000, "116.205.224.19", 2 * i, message_size, test_time);
+        5000, "116.205.224.19", 2 * i + 4000, message_size, test_time);
     // new PressureClient(5000, "127.0.0.1", 2 * i, message_size, -1);
 
     // 将新的连接套接字添加到 epoll 实例中
     int Pressure_fd = onePressureClient->Run();
-    event.events = EPOLLIN | EPOLLOUT;  // 监听可读可写事件，水平触发模式
+    event.events =
+        EPOLLIN | EPOLLOUT | EPOLLERR;  // 监听可读可写事件，水平触发模式
     event.data.fd = Pressure_fd;
     if (epoll_ctl(epoll_fd[0], EPOLL_CTL_ADD, Pressure_fd, &event) == -1) {
       std::cerr << "Failed to add client socket to epoll." << std::endl;
@@ -50,12 +59,13 @@ void CreateClient(int thread_id, int num_sessions, int* epoll_fd,
 
     // ---- 回射客户端 ----
     EchoServerClient* oneEchoServerClient =
-        new EchoServerClient(5000, "116.205.224.19", 2 * i + 1);
+        new EchoServerClient(5000, "116.205.224.19", 2 * i + 1 + 4000);
     // new EchoServerClient(5000, "127.0.0.1", 2 * i + 1);
     // 将新的连接套接字添加到 epoll 实例中
     int EchoServer_fd = oneEchoServerClient->Run();
     // 这里回射端一开始也监听可写事件是因为要发送id
-    event.events = EPOLLIN | EPOLLOUT;  // 监听可读可写事件，水平触发模式
+    event.events =
+        EPOLLIN | EPOLLOUT | EPOLLERR;  // 监听可读可写事件，水平触发模式
     event.data.fd = EchoServer_fd;
     if (epoll_ctl(epoll_fd[1], EPOLL_CTL_ADD, EchoServer_fd, &event) == -1) {
       std::cerr << "Failed to add client socket to epoll." << std::endl;
@@ -87,6 +97,62 @@ void ThreadMain(int type, int* epoll_fd, int num_sessions,
         continue;
       }
       int connected_socket = events[i].data.fd;
+
+      if (events[i].events & EPOLLERR) {
+        int error;
+        socklen_t error_len = sizeof(int);
+        getsockopt(connected_socket, SOL_SOCKET, SO_ERROR, &error, &error_len);
+        std::cerr << "EPOLLERR error:" << error << " " << strerror(error)
+                  << std::endl;
+        if (error == ETIMEDOUT) {
+          // connect超时
+          // epoll中删除原来的fd
+          if (epoll_ctl(epoll_fd[type], EPOLL_CTL_DEL, connected_socket,
+                        nullptr) == -1) {
+            std::cerr << "Failed to remove client socket from epoll."
+                      << std::endl;
+            exit(-1);
+          }
+          // 取消原来的映射
+          close(connected_socket);
+          fd_to_client[connected_socket] = nullptr;
+          std::cerr << client->GetId() << "连接超时，进行重连。" << std::endl;
+          // 重连新fd
+          connected_socket = client->Run();
+          // 重新映射
+          fd_to_client[connected_socket] = client;
+          // 重新添入epoll
+          epoll_event event{};
+          event.events =
+              EPOLLIN | EPOLLOUT | EPOLLERR;  // 监听可读可写事件，水平触发模式
+          event.data.fd = connected_socket;
+          if (epoll_ctl(epoll_fd[type], EPOLL_CTL_ADD, connected_socket,
+                        &event) == -1) {
+            std::cerr << "Failed to add client socket to epoll." << std::endl;
+            exit(-1);
+          }
+        } else {
+          //断开连接
+          if (epoll_ctl(epoll_fd[type], EPOLL_CTL_DEL, connected_socket,
+                        nullptr) == -1) {
+            std::cerr << "Failed to remove client socket from epoll."
+                      << std::endl;
+            exit(-1);
+          }
+          if (client != nullptr) {
+            delete client;
+            client = nullptr;
+          }
+          --n_client;
+          if (n_client == 0) {
+            std::cerr << "所有客户端断连" << std::endl;
+            exit(-1);
+          }
+          fd_to_client[connected_socket] = nullptr;
+          close(connected_socket);
+        }
+        continue;
+      }
 
       if (events[i].events & EPOLLIN) {
         // 可读事件
@@ -180,9 +246,7 @@ int main(int argc, char** argv) {
 
   Client* fd_to_client[MAX_CLIENT_NUM] = {nullptr};
   std::vector<std::thread> v_thread;
-  // 循环次数
-  int loop_num = std::min(THREAD_NUM, num_sessions);
-  for (int j = 0; j < loop_num; ++j) {
+  for (int j = 0; j < THREAD_NUM; ++j) {
     v_thread.push_back(std::thread(CreateClient, j, num_sessions, epoll_fd,
                                    fd_to_client, message_size));
   }

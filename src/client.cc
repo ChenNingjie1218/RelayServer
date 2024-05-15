@@ -59,15 +59,16 @@ int Client::Run() {
   server_address.sin_port = htons(serverport_);
 
   // 将套接字设置为非阻塞模式
-  // int val = fcntl(client_socket, F_GETFL);
-  // if (fcntl(client_socket, F_SETFL, val | O_NONBLOCK) == -1) {
-  //   std::cerr << "Failed to set client socket to non-blocking mode."
-  //             << std::endl;
-  //   exit(-1);
-  // }
+  int val = fcntl(client_socket, F_GETFL);
+  if (fcntl(client_socket, F_SETFL, val | O_NONBLOCK) == -1) {
+    std::cerr << "Failed to set client socket to non-blocking mode."
+              << std::endl;
+    exit(-1);
+  }
 
   //连接到服务器
   int connectResult;
+  errno = 0;
   if ((connectResult = connect(client_socket, (sockaddr*)&server_address,
                                sizeof(server_address))) <= 0) {
     if (connectResult == 0) {
