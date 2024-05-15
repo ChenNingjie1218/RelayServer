@@ -18,7 +18,7 @@ void signalHandler(int signal) {
   std::cout << "平均延时：" << duration.count() / count << " ms" << std::endl;
   exit(signal);
 }
-void CreateClient(int thread_id, int num_sessions, int* epoll_fd,
+void CreateClient(int thread_id, int num_sessions, int (*epoll_fd)[8],
                   Client** fd_to_client, const int message_size) {
   epoll_event event{};
   // 客户端与服务器连接 并将其加入到epoll 实例中
@@ -43,7 +43,7 @@ void CreateClient(int thread_id, int num_sessions, int* epoll_fd,
     // std::cerr << "测试次数:" << test_time << std::endl;
     // ---- 压力发生客户端 ----
     PressureClient* onePressureClient = new PressureClient(
-        5000, "116.205.224.19", 2 * i + 4000, message_size, test_time);
+        5000, "116.205.224.19", 2 * i, message_size, test_time);
     // new PressureClient(5000, "127.0.0.1", 2 * i, message_size, -1);
 
     // 将新的连接套接字添加到 epoll 实例中
@@ -51,7 +51,8 @@ void CreateClient(int thread_id, int num_sessions, int* epoll_fd,
     event.events =
         EPOLLIN | EPOLLOUT | EPOLLERR;  // 监听可读可写事件，水平触发模式
     event.data.fd = Pressure_fd;
-    if (epoll_ctl(epoll_fd[0], EPOLL_CTL_ADD, Pressure_fd, &event) == -1) {
+    if (epoll_ctl(epoll_fd[0][thread_id], EPOLL_CTL_ADD, Pressure_fd, &event) ==
+        -1) {
       std::cerr << "Failed to add client socket to epoll." << std::endl;
       exit(-1);
     }
@@ -59,7 +60,7 @@ void CreateClient(int thread_id, int num_sessions, int* epoll_fd,
 
     // ---- 回射客户端 ----
     EchoServerClient* oneEchoServerClient =
-        new EchoServerClient(5000, "116.205.224.19", 2 * i + 1 + 4000);
+        new EchoServerClient(5000, "116.205.224.19", 2 * i + 1);
     // new EchoServerClient(5000, "127.0.0.1", 2 * i + 1);
     // 将新的连接套接字添加到 epoll 实例中
     int EchoServer_fd = oneEchoServerClient->Run();
@@ -67,7 +68,8 @@ void CreateClient(int thread_id, int num_sessions, int* epoll_fd,
     event.events =
         EPOLLIN | EPOLLOUT | EPOLLERR;  // 监听可读可写事件，水平触发模式
     event.data.fd = EchoServer_fd;
-    if (epoll_ctl(epoll_fd[1], EPOLL_CTL_ADD, EchoServer_fd, &event) == -1) {
+    if (epoll_ctl(epoll_fd[1][thread_id], EPOLL_CTL_ADD, EchoServer_fd,
+                  &event) == -1) {
       std::cerr << "Failed to add client socket to epoll." << std::endl;
       exit(-1);
     }
@@ -78,14 +80,15 @@ void CreateClient(int thread_id, int num_sessions, int* epoll_fd,
  * @brief: 线程主函数
  * @param: type: 线程类型，0表示压力发生端线程，1表示回射端线程
  */
-void ThreadMain(int type, int* epoll_fd, int num_sessions,
+void ThreadMain(int type, int (*epoll_fd)[8], int thread_id, int num_sessions,
                 Client** fd_to_client) {
   int n_client = num_sessions;
   // 创建事件数组用于存储触发的事件
   epoll_event events[MAX_EVENTS];
   while (1) {
     // 等待事件触发
-    int num_events = epoll_wait(epoll_fd[type], events, MAX_EVENTS, -1);
+    int num_events =
+        epoll_wait(epoll_fd[type][thread_id], events, MAX_EVENTS, -1);
     if (num_events == -1) {
       std::cerr << "Failed to wait for events." << std::endl;
       exit(-1);
@@ -107,8 +110,8 @@ void ThreadMain(int type, int* epoll_fd, int num_sessions,
         if (error == ETIMEDOUT) {
           // connect超时
           // epoll中删除原来的fd
-          if (epoll_ctl(epoll_fd[type], EPOLL_CTL_DEL, connected_socket,
-                        nullptr) == -1) {
+          if (epoll_ctl(epoll_fd[type][thread_id], EPOLL_CTL_DEL,
+                        connected_socket, nullptr) == -1) {
             std::cerr << "Failed to remove client socket from epoll."
                       << std::endl;
             exit(-1);
@@ -126,15 +129,15 @@ void ThreadMain(int type, int* epoll_fd, int num_sessions,
           event.events =
               EPOLLIN | EPOLLOUT | EPOLLERR;  // 监听可读可写事件，水平触发模式
           event.data.fd = connected_socket;
-          if (epoll_ctl(epoll_fd[type], EPOLL_CTL_ADD, connected_socket,
-                        &event) == -1) {
+          if (epoll_ctl(epoll_fd[type][thread_id], EPOLL_CTL_ADD,
+                        connected_socket, &event) == -1) {
             std::cerr << "Failed to add client socket to epoll." << std::endl;
             exit(-1);
           }
         } else {
           //断开连接
-          if (epoll_ctl(epoll_fd[type], EPOLL_CTL_DEL, connected_socket,
-                        nullptr) == -1) {
+          if (epoll_ctl(epoll_fd[type][thread_id], EPOLL_CTL_DEL,
+                        connected_socket, nullptr) == -1) {
             std::cerr << "Failed to remove client socket from epoll."
                       << std::endl;
             exit(-1);
@@ -162,16 +165,16 @@ void ThreadMain(int type, int* epoll_fd, int num_sessions,
           epoll_event event{};
           event.events = EPOLLIN | EPOLLOUT;  // 监听可读事件,水平触发
           event.data.fd = connected_socket;
-          if (epoll_ctl(epoll_fd[type], EPOLL_CTL_MOD, connected_socket,
-                        &event) == -1) {
+          if (epoll_ctl(epoll_fd[type][thread_id], EPOLL_CTL_MOD,
+                        connected_socket, &event) == -1) {
             std::cerr << "Failed to change epoll mod." << strerror(errno)
                       << std::endl;
             exit(-1);
           }
         } else if (nrecv == 0) {
           //断开连接
-          if (epoll_ctl(epoll_fd[type], EPOLL_CTL_DEL, connected_socket,
-                        nullptr) == -1) {
+          if (epoll_ctl(epoll_fd[type][thread_id], EPOLL_CTL_DEL,
+                        connected_socket, nullptr) == -1) {
             std::cerr << "Failed to remove client socket from epoll."
                       << std::endl;
             exit(-1);
@@ -199,8 +202,8 @@ void ThreadMain(int type, int* epoll_fd, int num_sessions,
           epoll_event event{};
           event.events = EPOLLIN;  // 监听可读事件,水平触发
           event.data.fd = connected_socket;
-          if (epoll_ctl(epoll_fd[type], EPOLL_CTL_MOD, connected_socket,
-                        &event) == -1) {
+          if (epoll_ctl(epoll_fd[type][thread_id], EPOLL_CTL_MOD,
+                        connected_socket, &event) == -1) {
             std::cerr << "Failed to change epoll mod." << std::endl;
             exit(-1);
           }
@@ -236,12 +239,14 @@ int main(int argc, char** argv) {
   }
 
   // 创建 epoll 实例
-  int epoll_fd[2];
-  epoll_fd[0] = epoll_create1(0);  // 压力发生端
-  epoll_fd[1] = epoll_create1(0);  // 回射服务端
-  if (epoll_fd[0] == -1 || epoll_fd[1] == -1) {
-    std::cerr << "Failed to create epoll instance." << std::endl;
-    exit(-1);
+  int epoll_fd[2][THREAD_NUM];
+  for (int j = 0; j < THREAD_NUM; ++j) {
+    epoll_fd[0][j] = epoll_create1(0);  // 压力发生端
+    epoll_fd[1][j] = epoll_create1(0);  // 回射服务端
+    if (epoll_fd[0][j] == -1 || epoll_fd[1][j] == -1) {
+      std::cerr << "Failed to create epoll instance." << std::endl;
+      exit(-1);
+    }
   }
 
   Client* fd_to_client[MAX_CLIENT_NUM] = {nullptr};
@@ -253,12 +258,20 @@ int main(int argc, char** argv) {
   for (auto& t : v_thread) {
     t.join();
   }
-  std::cerr << "所有客户端连接成功" << std::endl;
-
-  std::thread presure_thread(ThreadMain, 0, epoll_fd, num_sessions,
-                             fd_to_client);
-  std::thread echo_thread(ThreadMain, 1, epoll_fd, num_sessions, fd_to_client);
-  presure_thread.join();
-  echo_thread.join();
+  std::cerr << "所有客户端调用connect()成功" << std::endl;
+  std::vector<std::thread> v_pressure_thread;
+  std::vector<std::thread> v_echo_thread;
+  for (int j = 0; j < THREAD_NUM; ++j) {
+    v_pressure_thread.push_back(
+        std::thread(ThreadMain, 0, epoll_fd, j, num_sessions, fd_to_client));
+    v_echo_thread.push_back(
+        std::thread(ThreadMain, 1, epoll_fd, j, num_sessions, fd_to_client));
+  }
+  for (auto& t : v_pressure_thread) {
+    t.join();
+  }
+  for (auto& t : v_echo_thread) {
+    t.join();
+  }
   return 0;
 }
