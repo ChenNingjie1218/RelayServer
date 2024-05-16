@@ -44,7 +44,7 @@ void CreateClient(int thread_id, int num_sessions, int (*epoll_fd)[8],
     // ---- 压力发生客户端 ----
     PressureClient* onePressureClient = new PressureClient(
         5000, "116.205.224.19", 2 * i, message_size, test_time);
-    // new PressureClient(5000, "127.0.0.1", 2 * i, message_size, -1);
+    // new PressureClient(5000, "127.0.0.1", 2 * i, message_size, test_time);
 
     // 将新的连接套接字添加到 epoll 实例中
     int Pressure_fd = onePressureClient->Run();
@@ -81,8 +81,7 @@ void CreateClient(int thread_id, int num_sessions, int (*epoll_fd)[8],
  * @param: type: 线程类型，0表示压力发生端线程，1表示回射端线程
  */
 void ThreadMain(int type, int (*epoll_fd)[8], int thread_id, int num_sessions,
-                Client** fd_to_client) {
-  int n_client = num_sessions;
+                Client** fd_to_client, int& n_client) {
   // 创建事件数组用于存储触发的事件
   epoll_event events[MAX_EVENTS];
   while (1) {
@@ -259,13 +258,16 @@ int main(int argc, char** argv) {
     t.join();
   }
   std::cerr << "所有客户端调用connect()成功" << std::endl;
+  int n_client = num_sessions;
   std::vector<std::thread> v_pressure_thread;
   std::vector<std::thread> v_echo_thread;
   for (int j = 0; j < THREAD_NUM; ++j) {
-    v_pressure_thread.push_back(
-        std::thread(ThreadMain, 0, epoll_fd, j, num_sessions, fd_to_client));
-    v_echo_thread.push_back(
-        std::thread(ThreadMain, 1, epoll_fd, j, num_sessions, fd_to_client));
+    v_pressure_thread.push_back(std::thread(ThreadMain, 0, epoll_fd, j,
+                                            num_sessions, fd_to_client,
+                                            std::ref(n_client)));
+    v_echo_thread.push_back(std::thread(ThreadMain, 1, epoll_fd, j,
+                                        num_sessions, fd_to_client,
+                                        std::ref(n_client)));
   }
   for (auto& t : v_pressure_thread) {
     t.join();
