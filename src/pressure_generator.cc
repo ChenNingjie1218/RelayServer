@@ -18,7 +18,7 @@ void signalHandler(int signal) {
   std::cout << "平均延时：" << duration.count() / count << " ms" << std::endl;
   exit(signal);
 }
-void CreateClient(int thread_id, int num_sessions, int (*epoll_fd)[8],
+void CreateClient(int thread_id, int num_sessions, int (*epoll_fd)[THREAD_NUM],
                   Client** fd_to_client, const int message_size) {
   epoll_event event{};
   // 客户端与服务器连接 并将其加入到epoll 实例中
@@ -80,8 +80,8 @@ void CreateClient(int thread_id, int num_sessions, int (*epoll_fd)[8],
  * @brief: 线程主函数
  * @param: type: 线程类型，0表示压力发生端线程，1表示回射端线程
  */
-void ThreadMain(int type, int (*epoll_fd)[8], int thread_id, int num_sessions,
-                Client** fd_to_client, int& n_client) {
+void ThreadMain(int type, int (*epoll_fd)[THREAD_NUM], int thread_id,
+                int num_sessions, Client** fd_to_client, int& n_client) {
   // 创建事件数组用于存储触发的事件
   epoll_event events[MAX_EVENTS];
   while (1) {
@@ -106,7 +106,7 @@ void ThreadMain(int type, int (*epoll_fd)[8], int thread_id, int num_sessions,
         getsockopt(connected_socket, SOL_SOCKET, SO_ERROR, &error, &error_len);
         std::cerr << "EPOLLERR error:" << error << " " << strerror(error)
                   << std::endl;
-        if (error == ETIMEDOUT) {
+        if (error == ETIMEDOUT && !client->IsConnected()) {
           // connect超时
           // epoll中删除原来的fd
           if (epoll_ctl(epoll_fd[type][thread_id], EPOLL_CTL_DEL,
@@ -154,6 +154,10 @@ void ThreadMain(int type, int (*epoll_fd)[8], int thread_id, int num_sessions,
           close(connected_socket);
         }
         continue;
+      }
+
+      if (!client->IsConnected()) {
+        client->SetConnected(connected_socket);
       }
 
       if (events[i].events & EPOLLIN) {
